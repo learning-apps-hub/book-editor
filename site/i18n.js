@@ -1,0 +1,93 @@
+// Display language: every menu and app word. Stories keep their own languages.
+// Add a language = add one block here; the language sheet lists every key of UI.
+export const UI = {
+  en: {
+    name: 'English',
+    dispLang: 'Display language', dispHelp: 'Menus and buttons show in this language. Stories keep their own languages.',
+    myShelf: 'My shelf', library: 'Library',
+    libIntro: 'Tap a book to read it. To make changes, add it to your shelf.',
+    libEmpty: 'The Library is empty. Books appear here when the author shares them.',
+    shelfEmpty: 'Your shelf is empty. Find a book in the Library and tap “Add to my shelf”.',
+    goLibrary: 'Go to the Library',
+    read: 'Read', readOnly: 'Read only', readIn: 'Read in', startRead: 'Tap Next to start reading.',
+    rPrev: '‹ Back', rNext: 'Next ›', pageOf: 'Page {n} of {m}', cover: 'Cover', theEnd: 'The end',
+    noWords: 'No words in this language on this page yet.',
+    wantEdit: 'Want to change the words or leave a comment? Add this book to your shelf first.',
+    addShelf: 'Add to my shelf', addSub: 'so you can edit it', soon: 'My shelf is coming soon.',
+    loading: 'Loading…', tryAgain: 'Try again', backLib: '‹ Library',
+    loadFail: 'The Library could not be reached. Check the internet connection, then try again.',
+    bookFail: 'This book could not be opened. Check the internet connection, then try again.',
+    tooNew: 'This book was made by a newer version of the author’s app. Reload the page to get the newest Book Editor.',
+    notFound: 'This book is no longer in the Library.',
+    sample: 'Showing a made-up sample book.',
+  },
+  zh: {
+    name: '中文',
+    dispLang: '显示语言', dispHelp: '菜单和按钮会用这种语言显示。故事保留它自己的语言。',
+    myShelf: '我的书架', library: '书库',
+    libIntro: '点一本书就能阅读。想修改，先把它加到你的书架上。',
+    libEmpty: '书库里还没有书。作者分享书以后，书会出现在这里。',
+    shelfEmpty: '你的书架是空的。在书库里找一本书，点“加到我的书架”。',
+    goLibrary: '去书库',
+    read: '阅读', readOnly: '只读', readIn: '阅读语言', startRead: '点“下一页”开始阅读。',
+    rPrev: '‹ 上一页', rNext: '下一页 ›', pageOf: '第 {n} 页，共 {m} 页', cover: '封面', theEnd: '完',
+    noWords: '这一页还没有这种语言的文字。',
+    wantEdit: '想修改文字或留言？先把这本书加到你的书架上。',
+    addShelf: '加到我的书架', addSub: '加了就能编辑', soon: '“我的书架”很快就能用。',
+    loading: '正在加载…', tryAgain: '再试一次', backLib: '‹ 书库',
+    loadFail: '无法连接书库。请检查网络，然后再试一次。',
+    bookFail: '无法打开这本书。请检查网络，然后再试一次。',
+    tooNew: '这本书是用较新版本的作者应用制作的。请刷新页面，获取最新的 Book Editor。',
+    notFound: '这本书已经不在书库里了。',
+    sample: '这是一本虚构的示例书。',
+  },
+  pl: {
+    name: 'Polski',
+    dispLang: 'Język aplikacji', dispHelp: 'Menu i przyciski będą w tym języku. Bajki zachowują własne języki.',
+    myShelf: 'Moja półka', library: 'Biblioteka',
+    libIntro: 'Stuknij książkę, żeby ją przeczytać. Żeby coś zmienić, dodaj ją na swoją półkę.',
+    libEmpty: 'Biblioteka jest pusta. Książki pojawią się tu, gdy autor je udostępni.',
+    shelfEmpty: 'Twoja półka jest pusta. Znajdź książkę w Bibliotece i stuknij „Dodaj na moją półkę”.',
+    goLibrary: 'Przejdź do Biblioteki',
+    read: 'Czytaj', readOnly: 'Tylko do czytania', readIn: 'Język czytania', startRead: 'Stuknij Dalej, żeby zacząć czytać.',
+    rPrev: '‹ Wstecz', rNext: 'Dalej ›', pageOf: 'Strona {n} z {m}', cover: 'Okładka', theEnd: 'Koniec',
+    noWords: 'Na tej stronie nie ma jeszcze tekstu w tym języku.',
+    wantEdit: 'Chcesz poprawić tekst albo dodać komentarz? Najpierw dodaj książkę na swoją półkę.',
+    addShelf: 'Dodaj na moją półkę', addSub: 'żeby ją poprawiać', soon: 'Moja półka będzie dostępna wkrótce.',
+    loading: 'Ładowanie…', tryAgain: 'Spróbuj ponownie', backLib: '‹ Biblioteka',
+    loadFail: 'Nie można połączyć się z Biblioteką. Sprawdź internet i spróbuj ponownie.',
+    bookFail: 'Nie można otworzyć tej książki. Sprawdź internet i spróbuj ponownie.',
+    tooNew: 'Ta książka powstała w nowszej wersji aplikacji autora. Odśwież stronę, żeby mieć najnowszy Book Editor.',
+    notFound: 'Tej książki nie ma już w Bibliotece.',
+    sample: 'To wymyślona przykładowa książka.',
+  },
+  fr: {
+    name: 'Français',
+    dispLang: 'Langue de l’app', dispHelp: 'Les menus et boutons s’affichent dans cette langue. Les histoires gardent leurs propres langues.',
+    myShelf: 'Mon étagère', library: 'Bibliothèque',
+    libIntro: 'Touchez un livre pour le lire. Pour le modifier, ajoutez-le à votre étagère.',
+    libEmpty: 'La Bibliothèque est vide. Les livres apparaissent ici quand l’auteur les partage.',
+    shelfEmpty: 'Votre étagère est vide. Trouvez un livre dans la Bibliothèque et touchez « Ajouter à mon étagère ».',
+    goLibrary: 'Aller à la Bibliothèque',
+    read: 'Lire', readOnly: 'Lecture seule', readIn: 'Lire en', startRead: 'Touchez Suivant pour commencer.',
+    rPrev: '‹ Retour', rNext: 'Suivant ›', pageOf: 'Page {n} sur {m}', cover: 'Couverture', theEnd: 'Fin',
+    noWords: 'Pas encore de texte dans cette langue sur cette page.',
+    wantEdit: 'Envie de changer le texte ou de laisser un commentaire ? Ajoutez d’abord ce livre à votre étagère.',
+    addShelf: 'Ajouter à mon étagère', addSub: 'pour pouvoir le modifier', soon: 'Mon étagère arrive bientôt.',
+    loading: 'Chargement…', tryAgain: 'Réessayer', backLib: '‹ Bibliothèque',
+    loadFail: 'Impossible de joindre la Bibliothèque. Vérifiez la connexion, puis réessayez.',
+    bookFail: 'Impossible d’ouvrir ce livre. Vérifiez la connexion, puis réessayez.',
+    tooNew: 'Ce livre vient d’une version plus récente de l’app de l’auteur. Rechargez la page pour avoir le dernier Book Editor.',
+    notFound: 'Ce livre n’est plus dans la Bibliothèque.',
+    sample: 'Livre d’exemple inventé.',
+  },
+};
+
+// A language's own name for itself, for story languages (any code, not only the display languages).
+export function langName(code) {
+  if (UI[code]) return UI[code].name;
+  try {
+    const n = new Intl.DisplayNames([code], { type: 'language' }).of(code);
+    return n ? n[0].toLocaleUpperCase(code) + n.slice(1) : code;
+  } catch { return code; }
+}
