@@ -1,0 +1,25 @@
+{
+  "format": "book-editor-library",
+  "formatVersion": 1,
+  "books": [
+    {
+      "id": "lantern-fox",
+      "bookVersion": 1,
+      "titles": {
+        "en": "The Lantern Fox",
+        "zh": "提灯笼的小狐狸",
+        "pl": "Lisek z latarenką",
+        "fr": "Le Renard à la lanterne"
+      },
+      "languages": [
+        "en",
+        "zh",
+        "pl",
+        "fr"
+      ],
+      "cover": "lantern-fox/pictures/covers/front.png",
+      "shared": "2026-11-05T12:00:00Z",
+      "bytes": 129940
+    }
+  ]
+}

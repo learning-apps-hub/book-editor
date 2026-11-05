@@ -1,0 +1,45 @@
+{
+  "format": "book-editor-book",
+  "formatVersion": 1,
+  "id": "lantern-fox",
+  "bookVersion": 1,
+  "fingerprint": "sha256:1b3b1089d8003f2a3d98dec187ca2cb7020b80b273630745961523ce73d870e2",
+  "exported": "2026-11-05T12:00:00Z",
+  "languages": [
+    "en",
+    "zh",
+    "pl",
+    "fr"
+  ],
+  "titles": {
+    "en": "The Lantern Fox",
+    "zh": "提灯笼的小狐狸",
+    "pl": "Lisek z latarenką",
+    "fr": "Le Renard à la lanterne"
+  },
+  "scenes": 4,
+  "pictures": {
+    "colour": {
+      "1": "pictures/colour/01.png",
+      "2": "pictures/colour/02.png",
+      "3": "pictures/colour/03.png",
+      "4": "pictures/colour/04.png"
+    },
+    "colouring": {
+      "1": "pictures/colouring/01.png",
+      "2": "pictures/colouring/02.png",
+      "3": "pictures/colouring/03.png",
+      "4": "pictures/colouring/04.png"
+    },
+    "small": {
+      "1": "pictures/small/01.png",
+      "2": "pictures/small/02.png",
+      "3": "pictures/small/03.png",
+      "4": "pictures/small/04.png"
+    },
+    "covers": {
+      "front": "pictures/covers/front.png",
+      "back": "pictures/covers/back.png"
+    }
+  }
+}
