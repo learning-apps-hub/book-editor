@@ -16,7 +16,7 @@
 <body>
 <h1>PDF font test</h1>
 <p>Builds an A5 PDF in this browser from the sample book, with Gelasio (Latin) and
-Noto Serif SC (Chinese) embedded as subsets. Development page only.</p>
+Noto Serif SC (Chinese) cut down by HarfBuzz and embedded. Development page only.</p>
 <button data-run="sample">Sample book (4 languages)</button>
 <button data-run="stress">Chinese stress (20 scenes, 3500 different characters)</button>
 <pre id="out"></pre>
@@ -49,6 +49,27 @@ function wrap(text, font, size, width) {
   return lines;
 }
 
+// HarfBuzz hb-subset.wasm (harfbuzzjs 0.4.12): keep only the given characters. A fresh instance per call,
+// so the 14 MB font's wasm memory is released afterwards.
+let hbModule;
+async function hbSubset(fontBuf, chars) {
+  hbModule ||= await WebAssembly.compileStreaming(fetch("../../vendor/hb-subset.wasm"));
+  const x = (await WebAssembly.instantiate(hbModule, {})).exports;
+  const src = new Uint8Array(fontBuf), ptr = x.malloc(src.length);
+  new Uint8Array(x.memory.buffer).set(src, ptr);
+  const blob = x.hb_blob_create(ptr, src.length, 2, 0, 0), face = x.hb_face_create(blob, 0);
+  x.hb_blob_destroy(blob);
+  const input = x.hb_subset_input_create_or_fail(), set = x.hb_subset_input_unicode_set(input);
+  for (const ch of chars) x.hb_set_add(set, ch.codePointAt(0));
+  const sub = x.hb_subset_or_fail(face, input);
+  x.hb_subset_input_destroy(input);
+  if (!sub) throw new Error("font subset failed");
+  const rb = x.hb_face_reference_blob(sub), off = x.hb_blob_get_data(rb, 0), len = x.hb_blob_get_length(rb);
+  const result = new Uint8Array(x.memory.buffer).slice(off, off + len);
+  x.hb_blob_destroy(rb); x.hb_face_destroy(sub); x.hb_face_destroy(face); x.free(ptr);
+  return result;
+}
+
 async function bytes(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.arrayBuffer(); }
 
 async function build(kind) {
@@ -69,10 +90,19 @@ async function build(kind) {
     needZh ? bytes("../../fonts/NotoSerifSC-Regular.ttf") : null]);
   log(`fonts loaded: ${ms(tFonts)} ms (Chinese font ${zhBytes ? (zhBytes.byteLength / 1048576).toFixed(1) + " MB" : "not needed"})`);
 
+  // pdf-lib's own subset:true drops most Chinese glyphs, so subset with HarfBuzz first and embed as-is.
+  const tSub = performance.now();
+  // Always keep space, digits and basic punctuation: a font cut to nothing has no cmap and fontkit refuses it.
+  const BASE = [..." 0123456789.,:;!?-()"];
+  const used = (pick) => new Set([...BASE, ...langs.filter(pick).flatMap(l => scenes.flatMap(s => [...s.title[l], ...s.text[l]]))]);
+  const latinSub = await hbSubset(latinBytes, used(l => l !== "zh"));
+  const zhSub = zhBytes ? await hbSubset(zhBytes, used(l => l === "zh")) : null;
+  log(`HarfBuzz subset: ${ms(tSub)} ms (Latin ${(latinSub.length / 1024).toFixed(0)} KB` +
+      (zhSub ? `, Chinese ${(zhSub.length / 1024).toFixed(0)} KB)` : ")"));
   const pdf = await PDFLib.PDFDocument.create();
   pdf.registerFontkit(fontkit);
-  const latin = await pdf.embedFont(latinBytes, { subset: true });
-  const zh = zhBytes ? await pdf.embedFont(zhBytes, { subset: true }) : null;
+  const latin = await pdf.embedFont(latinSub, { subset: false });
+  const zh = zhSub ? await pdf.embedFont(zhSub, { subset: false }) : null;
   const pics = {};
   for (const s of scenes) {
     const p = book.pictures.colour[String(((s.number - 1) % story.length) + 1)];
