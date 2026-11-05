@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF font test</title>
+<style>
+  :root { --bg: #fbf8f3; --fg: #222; --btn: #2f6b3a; --btn-fg: #fff; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1d1c1a; --fg: #eee; --btn: #3f8a4c; } }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 18px/1.5 system-ui, sans-serif; }
+  button { min-height: 52px; padding: 0 20px; margin: 0 8px 8px 0; font-size: 18px; border: 0; border-radius: 10px;
+           background: var(--btn); color: var(--btn-fg); }
+  pre { white-space: pre-wrap; word-break: break-word; }
+</style>
+</head>
+<body>
+<h1>PDF font test</h1>
+<p>Builds an A5 PDF in this browser from the sample book, with Gelasio (Latin) and
+Noto Serif SC (Chinese) embedded as subsets. Development page only.</p>
+<button data-run="sample">Sample book (4 languages)</button>
+<button data-run="stress">Chinese stress (20 scenes, 3500 different characters)</button>
+<pre id="out"></pre>
+<script src="../../vendor/pdf-lib.min.js"></script>
+<script src="../../vendor/fontkit.umd.min.js"></script>
+<script>
+const BOOK = "../../samples/lantern-fox/";
+const W = 420, H = 595, M = 36;              // A5 in points, margin
+const out = document.getElementById("out");
+const log = (s) => { out.textContent += s + "\n"; };
+const ms = (t) => Math.round(performance.now() - t);
+const heap = () => performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) + " MB" : "n/a";
+
+// Line breaking: words for Latin, characters for Chinese (no line may start with closing punctuation).
+const NO_START = "，。、；：！？）》」』”’";
+function wrap(text, font, size, width) {
+  const lines = [];
+  for (const para of text.split(/\n\n/)) {
+    const cjk = /[㐀-鿿]/.test(para);
+    const units = cjk ? [...para] : para.split(/(\s+)/).filter(Boolean);
+    let line = "";
+    for (const u of units) {
+      const next = line + u;
+      if (line && font.widthOfTextAtSize(next.trimEnd(), size) > width && !(cjk && NO_START.includes(u))) {
+        lines.push(line.trimEnd()); line = /^\s+$/.test(u) ? "" : u;
+      } else line = next;
+    }
+    lines.push(line.trimEnd(), "");
+  }
+  return lines;
+}
+
+async function bytes(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.arrayBuffer(); }
+
+async function build(kind) {
+  out.textContent = "";
+  const t0 = performance.now();
+  const [book, story] = await Promise.all([fetch(BOOK + "book.json").then(r => r.json()),
+                                           fetch(BOOK + "story.json").then(r => r.json())]);
+  let scenes = story, langs = book.languages;
+  if (kind === "stress") {                     // 20 scenes x 175 chars = 3500 distinct common-range characters
+    const chars = []; for (let c = 0x4e00; chars.length < 3500; c++) chars.push(String.fromCodePoint(c));
+    scenes = Array.from({ length: 20 }, (_, i) => ({ number: i + 1,
+      title: { zh: "第" + (i + 1) + "场" }, text: { zh: chars.slice(i * 175, i * 175 + 175).join("") } }));
+    langs = ["zh"];
+  }
+  const tFonts = performance.now();
+  const needZh = langs.includes("zh");
+  const [latinBytes, zhBytes] = await Promise.all([bytes("../../fonts/Gelasio-Regular.ttf"),
+    needZh ? bytes("../../fonts/NotoSerifSC-Regular.ttf") : null]);
+  log(`fonts loaded: ${ms(tFonts)} ms (Chinese font ${zhBytes ? (zhBytes.byteLength / 1048576).toFixed(1) + " MB" : "not needed"})`);
+
+  const pdf = await PDFLib.PDFDocument.create();
+  pdf.registerFontkit(fontkit);
+  const latin = await pdf.embedFont(latinBytes, { subset: true });
+  const zh = zhBytes ? await pdf.embedFont(zhBytes, { subset: true }) : null;
+  const pics = {};
+  for (const s of scenes) {
+    const p = book.pictures.colour[String(((s.number - 1) % story.length) + 1)];
+    pics[s.number] = pics[p] ||= await pdf.embedPng(await bytes(BOOK + p));
+  }
+  log(`heap after embedding: ${heap()}`);
+
+  const tPages = performance.now();
+  let pages = 0;
+  for (const lang of langs) {
+    const font = lang === "zh" ? zh : latin;
+    for (const s of scenes) {
+      let page = pdf.addPage([W, H]); pages++;
+      const img = pics[s.number], iw = W - 2 * M, ih = iw * img.height / img.width;
+      page.drawImage(img, { x: M, y: H - M - ih, width: iw, height: ih });
+      let y = H - M - ih - 30;
+      page.drawText(s.title[lang], { x: M, y, size: 18, font }); y -= 28;
+      for (const line of wrap(s.text[lang], font, 12, W - 2 * M)) {
+        if (y < M) { page = pdf.addPage([W, H]); pages++; y = H - M; }
+        if (line) page.drawText(line, { x: M, y, size: 12, font, lineHeight: 18 });
+        y -= line ? 18 : 9;
+      }
+    }
+  }
+  log(`pages drawn: ${pages} in ${ms(tPages)} ms`);
+  const tSave = performance.now();
+  const data = await pdf.save();
+  log(`saved (subsetting): ${ms(tSave)} ms, PDF ${(data.length / 1024).toFixed(0)} KB`);
+  log(`TOTAL ${ms(t0)} ms, heap now ${heap()}`);
+  const blob = new Blob([data], { type: "application/pdf" });
+  window.lastPdf = data;
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `pdf-font-${kind}.pdf`;
+  a.textContent = "Download the PDF"; out.append(a);
+  return { kind, pages, bytes: data.length, totalMs: Math.round(performance.now() - t0) };
+}
+
+document.querySelectorAll("[data-run]").forEach(b => b.onclick = () => build(b.dataset.run).catch(e => log("ERROR " + e)));
+window.build = build;
+</script>
+</body>
+</html>
