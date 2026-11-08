@@ -103,6 +103,46 @@ header.top { display: flex; align-items: center; gap: 12px; }
 .rcall { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; background: var(--green-l); border: 2px solid var(--green); border-radius: 16px; padding: 14px 16px; }
 .rcall p { margin: 0; flex: 1 1 240px; font-size: 18px; font-weight: 700; color: var(--green-d); }
 
+/* My shelf: folders, Select mode, action bar, sheets */
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.danger { color: var(--bad); }
+.btn.danger-solid { background: var(--bad); border-color: var(--bad); color: var(--card); }
+.onbtn { width: 100%; min-height: 56px; border: 2px solid var(--green); color: var(--green-d); background: var(--green-l); font-size: 16px; }
+.introrow { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; }
+.introrow p { margin: 0; font-size: 18px; font-weight: 600; flex: 1 1 240px; }
+.fold { display: flex; flex-direction: column; gap: 10px; }
+.foldh { display: flex; align-items: center; gap: 10px; background: none; border: 0; padding: 4px 0; font-size: 21px; font-weight: 800; text-align: left; min-height: 52px; overflow-wrap: anywhere; }
+.foldh .n { font-size: 15px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.foldh .car { font-size: 14px; color: var(--muted); width: 14px; flex: none; }
+.dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; }
+.badge { position: absolute; left: 8px; top: 8px; font-size: 13px; font-weight: 800; padding: 3px 10px; border-radius: 999px; color: #fff; background: #3567A8; }
+.pickbox { position: absolute; right: 8px; top: 8px; width: 40px; height: 40px; border-radius: 50%; border: 3px solid #fff; background: rgba(20,15,10,.35); display: grid; place-items: center; color: #fff; font-weight: 900; font-size: 20px; }
+.bk[aria-pressed="true"] .cov { outline: 4px solid var(--green); outline-offset: 2px; }
+.bk[aria-pressed="true"] .pickbox { background: var(--green); }
+.addtile { border: 2px dashed var(--line); border-radius: 10px; aspect-ratio: 3/4; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; background: none; color: var(--green); font-weight: 800; font-size: 16px; padding: 12px; text-align: center; min-width: 0; }
+.addtile .plus { font-size: 34px; line-height: 1; }
+.addtile small { color: var(--muted); font-weight: 600; font-size: 14px; }
+.foot { margin: 0; font-size: 15px; color: var(--muted); }
+.wrap.selecting { padding-bottom: 190px; }
+.actbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; background: var(--card); border-top: 1px solid var(--line); box-shadow: 0 -4px 16px rgba(0,0,0,.12);
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.actbar .in { max-width: 1200px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.actbar .cnt { font-weight: 800; font-size: 18px; flex: 1 1 160px; }
+.actbar .acts { display: grid; grid-template-columns: repeat(4, auto); gap: 8px; }
+.actbar .acts .btn { min-height: 52px; font-size: 16px; padding-inline: 14px; }
+.sheethead { display: flex; gap: 10px; align-items: center; }
+.sheethead h2, .sheetbox [role="alertdialog"] h2 { flex: 1; min-width: 0; }
+.movelist { display: flex; flex-direction: column; gap: 8px; }
+.movelist button { min-height: 56px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); font-size: 18px; font-weight: 800; text-align: left; padding: 8px 16px; display: flex; align-items: center; gap: 10px; overflow-wrap: anywhere; }
+.newf { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.newf input { flex: 1 1 200px; min-width: 0; min-height: 52px; border: 2px solid var(--line); border-radius: 12px; padding: 6px 12px; background: var(--card); font-size: 18px; }
+.newf .btn { min-height: 52px; }
+.sheetacts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+/* keep the toast above the Select action bar */
+#app.selecting ~ .toast { bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }
+.rcall.soft { background: var(--soft); border-color: var(--line); }
+.rcall.soft p { color: var(--ink); font-weight: 600; }
+
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 12px 18px; border-radius: 12px; font-weight: 700; width: max-content; max-width: calc(100% - 32px); box-shadow: var(--shadow); z-index: 40; }
 
 @media (max-width: 640px) {
@@ -117,5 +157,9 @@ header.top { display: flex; align-items: center; gap: 12px; }
   .rnav { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .rnav .pn { grid-column: 1 / -1; grid-row: 1; }
   .rnav .btn { padding-inline: 10px; font-size: 18px; white-space: nowrap; }
+  .actbar .acts { grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .actbar .cnt { flex-basis: 100%; }
+  .newf .btn { width: 100%; }
+  #app.selecting ~ .toast { bottom: calc(184px + env(safe-area-inset-bottom, 0px)); }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
