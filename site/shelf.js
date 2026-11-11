@@ -3,7 +3,7 @@
 //
 // Stores (database "book-editor", version 1):
 //   books  keyPath id      { id, bookVersion, fingerprint, titles, languages, book, story, folder, added, opened,
-//                            edits, comments, changed }   (edits/comments/changed: see work.js)
+//                            edits, editBy, comments, changed }   (see work.js)
 //   files  key [id, path]  Blob (pictures, as listed in book.json "pictures")
 //   meta   key 'folders'   [folder names, in the order they were made]
 
@@ -116,13 +116,13 @@ export async function markOpened(id) {
  * Saves run one after another, so an older save can never land after a newer one.
  */
 let saving = Promise.resolve();
-export function saveWork(id, edits, comments) {
+export function saveWork(id, edits, comments, editBy = {}) {
   const run = async () => {
     const d = await db(), tx = d.transaction('books', 'readwrite'), s = tx.objectStore('books');
     const rec = await asPromise(s.get(id));
     if (!rec) throw Object.assign(new Error('book gone'), { name: 'NotFoundError' });
     const changed = new Date().toISOString();
-    Object.assign(rec, { edits, comments, changed });
+    Object.assign(rec, { edits, editBy, comments, changed });
     s.put(rec);
     await finished(tx);
     return changed;

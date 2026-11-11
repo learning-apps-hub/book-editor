@@ -43,7 +43,10 @@ const S = {
   delC: null, redo: null,                                      // comment id asking "Delete?" / words to put back after Undo
   dirty: false, save: '', saveFailed: false,                   // save: '' | 'saving' | 'saved' | 'fail'
   composing: false, renderLater: false, fromBook: false,
+  name: '', nameSheet: false,                                  // the reader's name, shown to the author on changes + comments
+  reply: null, editC: null, showResolved: false,               // { id, draft } / { k: id or id/replyId, draft }
 };
+S.name = store.get('be.name') || '';
 const T = (k, v = {}) => String(UI[S.ui][k] ?? UI.en[k] ?? k).replace(/\{(\w+)\}/g, (_, x) => v[x]);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const titleOf = (titles, langs, prefer) => titles?.[prefer] || titles?.[langs?.[0]] || Object.values(titles || {})[0] || '';
@@ -173,10 +176,12 @@ function onRoute() {
   if (r.view !== 'shelf') { S.selecting = false; S.picked.clear(); S.sheet = null; }
   if (prev.view === 'book' && (r.view !== 'book' || r.id !== prev.id || r.n !== prev.n || r.tab !== prev.tab)) {
     flushSave();
-    Object.assign(S, { compose: null, sel: null, delC: null, redo: null });
+    Object.assign(S, { compose: null, sel: null, delC: null, redo: null, reply: null, editC: null });
   }
   if (r.view !== 'mine') S.fromBook = false;
   if (r.view === 'book' && r.tab === 'story') S.scene[r.id] = r.n;
+  if (r.view === 'book' && !S.name) S.nameSheet = true;
+  if (r.view !== 'book') S.nameSheet = false;
   if (r.view === 'read' && S.lib) loadBook(r.id);
   if (r.view === 'mine' || r.view === 'book') loadMine(r.id); else closeMine();
   render();
@@ -347,8 +352,18 @@ function countText({ c, n }) {
 function statusBox(rec) {
   const k = Work.counts(rec);
   return k.c + k.n
-    ? `<div class="status todo" id="stbox"><b>${esc(T('notSent'))}</b><span>${esc(countText(k))} · ${esc(T('keptHere'))}</span></div>`
-    : `<div class="status ok" id="stbox"><b>${esc(T('noChg'))}</b><span>${esc(T('noChgT'))}</span></div>`;
+    ? `<div class="status todo" id="stbox"><b>${esc(T('notSent'))}</b><span>${esc(countText(k))} · ${esc(T('keptHere'))}</span>${whoAmI()}</div>`
+    : `<div class="status ok" id="stbox"><b>${esc(T('noChg'))}</b><span>${esc(T('noChgT'))}</span>${whoAmI()}</div>`;
+}
+const whoAmI = () => S.name ? `<span class="whoami">${esc(T('you', { name: S.name }))}<button class="btn quiet" data-act="name-open">${esc(T('changeName'))}</button></span>` : '';
+const when = iso => { try { return new Intl.DateTimeFormat(S.ui, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso)); } catch { return ''; } };
+const byLine = (by, at, edited) => `<b>${esc(by || T('someone'))}</b><span>${esc(when(at))}${edited ? ` · ${esc(T('editedT'))}` : ''}</span>`;
+function nameSheet() {
+  if (!S.nameSheet) return '';
+  return `<div class="sheetbox" data-act="name-close"><section class="card" role="dialog" aria-modal="true" aria-labelledby="nh" data-stop="1">
+    <h2 id="nh">${esc(T('nameTitle'))}</h2><p>${esc(T('nameHelp'))}</p>
+    <div class="newf"><input id="nm" maxlength="40" autocomplete="name" value="${esc(S.name)}" placeholder="${esc(T('nameTitle'))}" aria-label="${esc(T('nameTitle'))}">
+      <button class="btn primary" data-act="name-save">${esc(T('save'))}</button></div></section></div>`;
 }
 const saveText = () => S.save === 'saving' ? T('saving') : S.save === 'saved' ? T('saved') : S.save === 'fail' ? T('notSaved') : '';
 const viewOf = (id, langs) => {
@@ -371,11 +386,16 @@ function bookScreen() {
     ${story ? storyView(rec) : `<section class="card"><div class="msg"><p>${esc(T('layoutSoon'))}</p></div></section>`}`;
 }
 
+// Track changes: each changed field shows the book's words with the reader's changes marked in them
+// (added words underlined, removed words struck through), with who changed it and when.
+const diffHtml = (was, now) => Work.diff(was, now).map(d => d.t === 'ins' ? `<ins>${esc(d.s)}</ins>` : d.t === 'del' ? `<del>${esc(d.s)}</del>` : esc(d.s)).join('');
 function chgHtml(rec, n, l) {
-  if (Work.isChanged(rec, n, 'title', l) || Work.isChanged(rec, n, 'text', l)) {
-    const t = Work.bookValue(rec, n, 'title', l), x = Work.bookValue(rec, n, 'text', l);
-    return `<span class="edited">✎ ${esc(T('changed'))}</span><button class="btn quiet" data-act="undo-lang" data-k="${esc(l)}">${esc(T('undoHere'))}</button>
-      <details><summary>${esc(T('seeWas'))}</summary><div class="was" lang="${esc(l)}">${t ? `<b>${esc(t)}</b>\n\n` : ''}${esc(x)}</div></details>`;
+  const fields = Work.FIELDS.filter(f => Work.isChanged(rec, n, f, l));
+  if (fields.length) {
+    return `<div class="tc"><div class="tchead"><span class="edited">✎ ${esc(T('changed'))}</span><button class="btn quiet" data-act="undo-lang" data-k="${esc(l)}">${esc(T('undoHere'))}</button></div>
+      ${fields.map(f => { const w = Work.editInfo(rec, n, f, l) || {};
+        return `<div class="tcf"><div class="cmmeta"><span class="flbl">${esc(T(f === 'title' ? 'fTitle' : 'fText'))}</span>${byLine(w.by, w.at)}</div>
+          <div class="diff ${f}" lang="${esc(l)}">${diffHtml(Work.bookValue(rec, n, f, l), Work.value(rec, n, f, l))}</div></div>`; }).join('')}</div>`;
   }
   if (S.redo && S.redo.n === n && S.redo.lang === l) return `<button class="btn quiet" data-act="redo-lang" data-k="${esc(l)}">${esc(T('redoHere'))}</button>`;
   return '';
@@ -391,7 +411,7 @@ function storyView(rec) {
   const thumb = k => { const p = P.colour?.[k] || P.small?.[k] || P.colouring?.[k]; return p && urls[p] ? `<img src="${esc(urls[p])}" alt="">` : ''; };
   const sceneTitle = x => Work.value(rec, x, 'title', tl);
   const toc = `<nav class="toc" aria-labelledby="toch"><div class="lbl" id="toch">${esc(T('scenes'))}</div>${story.map(s => {
-    const x = s.number, cc = Work.sceneComments(rec, x).length;
+    const x = s.number, cc = Work.openComments(rec, x).length;
     return `<button data-act="scene" data-k="${x}" aria-current="${x === n}"><span class="th">${thumb(String(x))}</span><span class="num">${x}</span>
       <span class="tt" id="tt-${x}" lang="${esc(tl)}">${esc(sceneTitle(x))}</span>
       <span class="marks"><span class="edited" id="tm-${x}" title="${esc(T('changed'))}" ${Work.sceneChanged(rec, x) ? '' : 'hidden'}>✎</span>${cc ? `<span class="cmc" title="${esc(T(cc === 1 ? 'cm1' : 'cmN', { n: cc }))}">${ICON_CM_S}${cc}</span>` : ''}</span></button>`;
@@ -401,31 +421,48 @@ function storyView(rec) {
   const seg = langs.length > 1 ? `<div class="seg" role="group" aria-label="${esc(T('showLang'))}">${langs.map(l =>
     `<button lang="${esc(l)}" aria-pressed="${l === view}" data-act="view" data-k="${esc(l)}">${esc(langName(l, book.languageNames))}</button>`).join('')}
     <button aria-pressed="${all}" data-act="view" data-k="all">${esc(T('allLangs'))}</button></div>` : '<span></span>';
+  const ro = S.name ? '' : 'readonly data-act="need-name"';
   const block = l => {
     const tid = `t-${n}-${l}`, xid = `x-${n}-${l}`, on = Work.isChanged(rec, n, 'title', l) || Work.isChanged(rec, n, 'text', l);
     return `<div class="langblock">${all ? `<div class="lname" lang="${esc(l)}">${esc(langName(l, book.languageNames))}</div>` : ''}
       <label class="flbl" for="${tid}">${esc(T('fTitle'))}</label>
-      <input class="titlein" id="${tid}" data-f="title" data-l="${esc(l)}" data-n="${n}" lang="${esc(l)}" autocomplete="off" value="${esc(Work.value(rec, n, 'title', l))}">
+      <input class="titlein" id="${tid}" data-f="title" data-l="${esc(l)}" data-n="${n}" lang="${esc(l)}" autocomplete="off" ${ro} value="${esc(Work.value(rec, n, 'title', l))}">
       <label class="flbl" for="${xid}">${esc(T('fText'))}</label>
-      <textarea class="textin ${all ? 'short' : ''}" id="${xid}" data-f="text" data-l="${esc(l)}" data-n="${n}" lang="${esc(l)}">${esc(Work.value(rec, n, 'text', l))}</textarea>
+      <textarea class="textin ${all ? 'short' : ''}" id="${xid}" data-f="text" data-l="${esc(l)}" data-n="${n}" lang="${esc(l)}" ${ro}>${esc(Work.value(rec, n, 'text', l))}</textarea>
       <div class="chg" id="chg-${esc(l)}" data-on="${on}">${chgHtml(rec, n, l)}</div></div>`;
   };
   const nav = `<div class="spnav"><span>${n > 1 ? `<button class="btn bigbtn" data-act="scene" data-k="${n - 1}">${esc(T('prevScene', { n: n - 1 }))}</button>` : ''}</span>
     <span>${n < m ? `<button class="btn primary bigbtn" data-act="scene" data-k="${n + 1}">${esc(T('nextScene', { n: n + 1 }))}</button>` : ''}</span></div>`;
-  const cms = Work.sceneComments(rec, n), C = S.compose?.n === n ? S.compose : null;
+  const cms = Work.openComments(rec, n), done = Work.sceneComments(rec, n).filter(c => c.resolved), C = S.compose?.n === n ? S.compose : null;
   const composer = C ? `<div class="composer">${quoteChip(C)}<label class="flbl" for="cmtext">${esc(T('yourComment'))}</label>
       <textarea id="cmtext">${esc(C.draft || '')}</textarea>
       <div class="row"><button class="btn primary" data-act="save-comment">${esc(T('save'))}</button><button class="btn" data-act="cancel-comment">${esc(T('cancel'))}</button></div></div>` : '';
-  const list = cms.map(c => `<div class="cm"><div class="cmtop">${quoteChip(c, true)}${c.quote ? `<span class="cml">${esc(langName(c.lang, book.languageNames))}</span>` : ''}</div>
-      <p>${esc(c.text)}</p>${S.delC === c.id
-        ? `<div class="row delask"><b>${esc(T('delC'))}</b><button class="btn danger-solid" data-act="del-c-yes" data-k="${esc(c.id)}">${esc(T('del'))}</button><button class="btn" data-act="del-c-no">${esc(T('keepIt'))}</button></div>`
-        : `<button class="btn quiet del-c" data-act="del-comment" data-k="${esc(c.id)}">${esc(T('del'))}</button>`}</div>`).join('');
+  const own = by => !!by && by === S.name;
+  const editBox = k => `<label class="flbl" for="ced">${esc(T('edit'))}</label><textarea id="ced">${esc(S.editC.draft)}</textarea>
+    <div class="row"><button class="btn primary" data-act="edit-save">${esc(T('save'))}</button><button class="btn" data-act="edit-cancel">${esc(T('cancel'))}</button></div>`;
+  const ask = (k, q) => `<div class="row delask"><b>${esc(T(q))}</b><button class="btn danger-solid" data-act="del-c-yes" data-k="${esc(k)}">${esc(T('del'))}</button><button class="btn" data-act="del-c-no">${esc(T('keepIt'))}</button></div>`;
+  const ownActs = (k, by) => own(by) ? `<button class="btn quiet" data-act="edit-c" data-k="${esc(k)}">${esc(T('edit'))}</button><button class="btn quiet del-c" data-act="del-comment" data-k="${esc(k)}">${esc(T('del'))}</button>` : '';
+  const reply = (c, r) => { const k = `${c.id}/${r.id}`;
+    return `<div class="rp"><div class="cmmeta">${byLine(r.by, r.made, r.edited)}</div>
+      ${S.editC?.k === k ? editBox(k) : `<p>${esc(r.text)}</p>`}
+      ${S.delC === k ? ask(k, 'delR') : S.editC?.k === k || c.resolved ? '' : `<div class="row cmacts">${ownActs(k, r.by)}</div>`}</div>`; };
+  const card = c => `<div class="cm ${c.resolved ? 'isdone' : ''}" id="cm-${esc(c.id)}"><div class="cmmeta">${byLine(c.by, c.made, c.edited)}</div>
+      <div class="cmtop">${quoteChip(c, !c.resolved)}${c.quote ? `<span class="cml">${esc(langName(c.lang, book.languageNames))}</span>` : ''}</div>
+      ${S.editC?.k === c.id ? editBox(c.id) : `<p>${esc(c.text)}</p>`}
+      ${(c.replies || []).map(r => reply(c, r)).join('')}
+      ${S.reply?.id === c.id ? `<div class="rp"><label class="flbl" for="rptext">${esc(T('yourReply'))}</label><textarea id="rptext">${esc(S.reply.draft || '')}</textarea>
+        <div class="row"><button class="btn primary" data-act="reply-save">${esc(T('reply'))}</button><button class="btn" data-act="reply-cancel">${esc(T('cancel'))}</button></div></div>` : ''}
+      ${c.resolved ? `<div class="row cmacts"><span class="cml">${esc(T('resolvedBy', { name: c.resolved.by || T('someone'), t: when(c.resolved.at) }))}</span><button class="btn quiet" data-act="reopen" data-k="${esc(c.id)}">${esc(T('reopen'))}</button></div>`
+        : S.delC === c.id ? ask(c.id, 'delC')
+        : S.editC?.k === c.id || S.reply?.id === c.id ? ''
+        : `<div class="row cmacts"><button class="btn quiet" data-act="reply" data-k="${esc(c.id)}">${esc(T('reply'))}</button><button class="btn quiet" data-act="resolve" data-k="${esc(c.id)}">✓ ${esc(T('resolve'))}</button>${ownActs(c.id, c.by)}</div>`}</div>`;
+  const list = cms.map(card).join('') + (done.length ? `<button class="btn quiet resbtn" data-act="toggle-resolved" aria-expanded="${S.showResolved}">${S.showResolved ? '▾' : '▸'} ${esc(T('resolvedN', { n: done.length }))}</button>${S.showResolved ? done.map(card).join('') : ''}` : '');
   return `<div class="three">${toc}
     <section class="card scenecard">${mob}
       <div class="scenehead"><span class="lbl">${esc(T('sceneOf', { n, m }))}</span><span class="savest ${S.save === 'fail' ? 'bad' : ''}" id="savest" aria-live="polite">${esc(saveText())}</span></div>
       <div class="row between">${seg}<button class="btn" data-act="comment">${ICON_CM}${esc(T('comment'))}</button></div>
       ${shown.map(block).join('')}${nav}</section>
-    <aside class="cmside" aria-labelledby="cmh"><h3 class="lbl" id="cmh">${esc(T('commentsOn'))}</h3>${composer}${list || (C ? '' : `<div class="emptyc">${esc(T('noComments'))}</div>`)}</aside></div>`;
+    <aside class="cmside" aria-labelledby="cmh"><h3 class="lbl" id="cmh">${esc(T('commentsOn'))}</h3>${composer}${cms.length || C ? '' : `<div class="emptyc">${esc(T('noComments'))}</div>`}${list}</aside></div>`;
 }
 
 // While typing nothing is re-rendered (that would break typing and Chinese input): only the marks around the boxes change.
@@ -444,12 +481,19 @@ function refreshMarks() {
   const op = document.getElementById(`op-${n}`); if (op) op.textContent = `${T('sceneN', { n })} · ${title}${ch ? ' ✎' : ''}`;
   for (const l of langs) {
     const box = document.getElementById(`chg-${l}`); if (!box) continue;
-    const on = String(Work.isChanged(rec, n, 'title', l) || Work.isChanged(rec, n, 'text', l));
-    if (box.dataset.on !== on) { box.dataset.on = on; box.innerHTML = chgHtml(rec, n, l); }
+    box.dataset.on = String(Work.isChanged(rec, n, 'title', l) || Work.isChanged(rec, n, 'text', l));
+    box.innerHTML = chgHtml(rec, n, l);
   }
 }
 let marksTimer;
 const scheduleMarks = () => { clearTimeout(marksTimer); marksTimer = setTimeout(refreshMarks, 150); };
+
+// The reader's name: asked once per device, changeable (a shared tablet: each person types their own).
+function saveName() {
+  const box = document.getElementById('nm'), name = (box?.value || '').trim().replace(/\s+/g, ' ');
+  if (!name) return box?.focus();
+  S.name = name; store.set('be.name', name); S.nameSheet = false; render();
+}
 
 // ---- Autosave: a short pause after typing, and at once when leaving the book or the page ----
 let saveTimer;
@@ -467,10 +511,10 @@ function flushSave() {
   const M = S.mine;
   if (!M?.rec || !S.dirty) return;
   S.dirty = false;
-  const { id, rec } = M, edits = { ...(rec.edits || {}) }, comments = (rec.comments || []).map(c => ({ ...c }));
-  Shelf.saveWork(id, edits, comments).then(changed => {
+  const { id, rec } = M, edits = { ...(rec.edits || {}) }, editBy = structuredClone(rec.editBy || {}), comments = structuredClone(rec.comments || []);
+  Shelf.saveWork(id, edits, comments, editBy).then(changed => {
     const b = S.shelf?.find(x => x.id === id);
-    if (b) Object.assign(b, { edits, comments, changed });
+    if (b) Object.assign(b, { edits, editBy, comments, changed });
     S.saveFailed = false;
     if (S.mine?.id === id && !S.dirty) setSave('saved');
   }).catch(e => {
@@ -492,7 +536,7 @@ function render() {
   const f = document.activeElement, keep = f?.id && app.contains(f)
     ? { id: f.id, s: f.selectionStart, e: f.selectionEnd, d: f.selectionDirection, top: f.scrollTop } : null;
   app.classList.toggle('selecting', S.selecting && r.view === 'shelf');
-  app.innerHTML = header() + main + actBar() + shelfSheet() + langSheet();
+  app.innerHTML = header() + main + actBar() + shelfSheet() + nameSheet() + langSheet();
   const el = keep && document.getElementById(keep.id);
   if (el) {
     el.focus({ preventScroll: true });
@@ -540,7 +584,7 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]');
   if (!b || b.disabled) return;
   // A tap inside a sheet's card (not on a button) must not close the sheet.
-  if ((b.dataset.act === 'lang-close' || b.dataset.act === 'sheet-close') && b.classList.contains('sheetbox') && e.target.closest('[data-stop]')) return;
+  if (['lang-close', 'sheet-close', 'name-close'].includes(b.dataset.act) && b.classList.contains('sheetbox') && e.target.closest('[data-stop]')) return;
   const a = b.dataset.act, k = b.dataset.k;
   if (a === 'go') return go(k);
   if (a === 'read') return go(`read/${encodeURIComponent(k)}/0`);
@@ -572,6 +616,35 @@ function storyClick(a, k) {
   const M = S.mine, r = S.route;
   if (!M?.rec || r.view === 'shelf' || r.view === 'library') return;
   const rec = M.rec, id = rec.id, n = r.n;
+  const needName = () => { if (S.name) return false; S.nameSheet = true; render(); document.getElementById('nm')?.focus(); return true; };
+  const findC = k => { const [cid, rid] = String(k).split('/'), c = (rec.comments || []).find(x => x.id === cid); return { c, r: rid ? c?.replies?.find(x => x.id === rid) : null, rid }; };
+  const focusId = id2 => { const el = document.getElementById(id2); el?.focus({ preventScroll: true }); el?.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
+  if (a === 'name-open' || a === 'need-name') { if (a === 'need-name' && S.name) return; S.nameSheet = true; render(); return document.getElementById('nm')?.focus(); }
+  if (a === 'name-close') { S.nameSheet = false; return render(); }
+  if (a === 'name-save') return saveName();
+  if (a === 'reply') { if (needName()) return; S.reply = { id: k, draft: '' }; render(); return focusId('rptext'); }
+  if (a === 'reply-cancel') { S.reply = null; return render(); }
+  if (a === 'reply-save') {
+    const text = (document.getElementById('rptext')?.value || '').trim(), { c } = findC(S.reply.id);
+    if (!text) return document.getElementById('rptext')?.focus();
+    if (c) { c.replies = [...(c.replies || []), Work.newReply(text, S.name)]; queueSave(); }
+    S.reply = null; return render();
+  }
+  if (a === 'resolve' || a === 'reopen') {
+    if (a === 'resolve' && needName()) return;
+    const { c } = findC(k); if (!c) return;
+    if (a === 'resolve') c.resolved = { by: S.name, at: new Date().toISOString() }; else delete c.resolved;
+    queueSave(); return render();
+  }
+  if (a === 'toggle-resolved') { S.showResolved = !S.showResolved; return render(); }
+  if (a === 'edit-c') { const { c, r: rp } = findC(k); S.editC = { k, draft: (rp || c)?.text || '' }; render(); return focusId('ced'); }
+  if (a === 'edit-cancel') { S.editC = null; return render(); }
+  if (a === 'edit-save') {
+    const text = (document.getElementById('ced')?.value || '').trim(), { c, r: rp, rid } = findC(S.editC.k), it = rid ? rp : c;
+    if (!text) return document.getElementById('ced')?.focus();
+    if (it && it.text !== text) { it.text = text; it.edited = new Date().toISOString(); queueSave(); }
+    S.editC = null; return render();
+  }
   if (a === 'read-mine') { S.fromBook = true; return go(`mine/${encodeURIComponent(id)}/${r.tab === 'story' ? n : 0}`); }
   if (a === 'back-edit') {
     if (S.fromBook) return history.back();
@@ -582,13 +655,16 @@ function storyClick(a, k) {
   if (a === 'view') { S.view[id] = k; S.sel = null; return render(); }
   if (a === 'undo-lang') {
     const keepWords = Object.fromEntries(Work.FIELDS.map(f => [f, Work.value(rec, n, f, k)]));
-    Work.undo(rec, n, k); queueSave(); S.redo = { n, lang: k, words: keepWords }; return render();
+    const keepInfo = Object.fromEntries(Work.FIELDS.map(f => [f, Work.editInfo(rec, n, f, k)]));
+    Work.undo(rec, n, k); queueSave(); S.redo = { n, lang: k, words: keepWords, info: keepInfo }; return render();
   }
   if (a === 'redo-lang' && S.redo) {
-    for (const f of Work.FIELDS) Work.setValue(rec, n, f, k, S.redo.words[f]);
+    const { words, info } = S.redo;
+    for (const f of Work.FIELDS) { Work.setValue(rec, n, f, k, words[f], S.name); Work.setEditInfo(rec, n, f, k, info[f]); }
     queueSave(); return render();
   }
   if (a === 'comment') {
+    if (needName()) return;
     const sel = S.sel, t = sel && sel.n === n && sel.end > sel.start ? Work.value(rec, n, 'text', sel.lang) : '';
     let start = sel?.start, end = sel?.end;
     if (t) { while (start < end && /\s/.test(t[start])) start++; while (end > start && /\s/.test(t[end - 1])) end--; }
@@ -603,13 +679,18 @@ function storyClick(a, k) {
   if (a === 'save-comment') {
     const box = document.getElementById('cmtext'), text = (box?.value || '').trim();
     if (!text) return box?.focus();
-    rec.comments = [...(rec.comments || []), Work.newComment({ spread: n, ...S.compose, text })];
+    rec.comments = [...(rec.comments || []), Work.newComment({ spread: n, ...S.compose, text, by: S.name })];
     S.compose = null; S.sel = null; queueSave(); render();
     return document.querySelector('[data-act="comment"]')?.focus();
   }
   if (a === 'del-comment') { S.delC = k; return render(); }
   if (a === 'del-c-no') { S.delC = null; return render(); }
-  if (a === 'del-c-yes') { rec.comments = (rec.comments || []).filter(c => c.id !== k); S.delC = null; queueSave(); return render(); }
+  if (a === 'del-c-yes') {
+    const [cid, rid] = k.split('/');
+    if (rid) { const { c } = findC(cid); if (c) c.replies = (c.replies || []).filter(x => x.id !== rid); }
+    else rec.comments = (rec.comments || []).filter(c => c.id !== cid);
+    S.delC = null; queueSave(); return render();
+  }
   if (a === 'show-comment') {
     const c = (rec.comments || []).find(x => x.id === k);
     if (!c) return;
@@ -628,6 +709,8 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && S.compose && S.route.view === 'book') { S.compose = null; render(); return document.querySelector('[data-act="comment"]')?.focus(); }
   if (e.key === 'Escape' && S.sheet) return closeSheet();
   if (e.key === 'Enter' && e.target.id === 'nf') { e.preventDefault(); return createFolder(); }
+  if (e.key === 'Enter' && e.target.id === 'nm') { e.preventDefault(); return saveName(); }
+  if (e.key === 'Escape' && S.nameSheet) { S.nameSheet = false; return render(); }
   if ((S.route.view !== 'read' && S.route.view !== 'mine') || S.langSheet || e.target.matches('input,textarea,select')) return;
   const story = S.route.view === 'read' ? S.books[S.route.id]?.story : S.mine?.rec?.story;
   if (!story) return;
@@ -641,8 +724,10 @@ window.addEventListener('hashchange', onRoute);
 document.addEventListener('input', e => {
   const el = e.target;
   if (el.id === 'cmtext' && S.compose) { S.compose.draft = el.value; return; }
-  if (!el.dataset?.f || S.route.view !== 'book' || !S.mine?.rec) return;
-  Work.setValue(S.mine.rec, +el.dataset.n, el.dataset.f, el.dataset.l, el.value);
+  if (el.id === 'rptext' && S.reply) { S.reply.draft = el.value; return; }
+  if (el.id === 'ced' && S.editC) { S.editC.draft = el.value; return; }
+  if (!el.dataset?.f || S.route.view !== 'book' || !S.mine?.rec || !S.name) return;
+  Work.setValue(S.mine.rec, +el.dataset.n, el.dataset.f, el.dataset.l, el.value, S.name);
   queueSave(); scheduleMarks();
 });
 document.addEventListener('change', e => {

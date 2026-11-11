@@ -116,7 +116,9 @@ sample book to prove both agree.
 ## 2. The changes file: `<Title>.changes.json`
 
 What a reader sends back. One file per book (sending back several books makes several
-files). No names, no pictures, a few KB.
+files). No pictures, a few KB. It carries the name the reader typed into Book Editor
+(stored only on their device) on each change, comment and reply, like track changes and
+comments in a word processor.
 
 ```json
 {
@@ -125,12 +127,16 @@ files). No names, no pictures, a few KB.
   "book": { "id": "lantern-fox", "bookVersion": 1, "fingerprint": "sha256:9f0c…" },
   "saved": "2026-11-06T09:30:00Z",
   "changes": [
-    { "spread": 2, "lang": "en", "field": "text",  "was": "…old words…", "now": "…new words…" },
-    { "spread": 3, "lang": "pl", "field": "title", "was": "Most", "now": "Mostek" }
+    { "spread": 2, "lang": "en", "field": "text",  "was": "…old words…", "now": "…new words…",
+      "by": "Ana", "at": "2026-11-06T09:12:40Z" },
+    { "spread": 3, "lang": "pl", "field": "title", "was": "Most", "now": "Mostek", "by": "Ola", "at": "2026-11-06T09:20:02Z" }
   ],
   "comments": [
-    { "spread": 1, "lang": "en", "quote": "dark wood", "position": 31, "text": "Too scary for little ones?" },
-    { "spread": 4, "text": "Lovely ending." }
+    { "spread": 1, "lang": "en", "quote": "dark wood", "position": 31, "text": "Too scary for little ones?",
+      "by": "Ana", "made": "2026-11-06T09:14:00Z",
+      "replies": [ { "text": "I think it is fine.", "by": "Ola", "made": "2026-11-06T09:21:30Z" } ] },
+    { "spread": 4, "text": "Lovely ending.", "by": "Ana", "made": "2026-11-06T09:25:00Z", "edited": "2026-11-06T09:26:10Z",
+      "resolved": { "by": "Ola", "at": "2026-11-06T09:28:00Z" }, "replies": [] }
   ],
   "layout": { "target": "a5-booklet", "settings": { } }
 }
@@ -142,12 +148,19 @@ files). No names, no pictures, a few KB.
 | `book` | copied from the book's `book.json`: `id`, `bookVersion`, `fingerprint`. The author app uses the fingerprint to see whether its words moved on since the export. |
 | `saved` | UTC time the file was made. |
 | `changes` | at most one entry per scene + language + field. `field` is `"title"` or `"text"`. `was` = the words in the book file, `now` = the reader's words. Whole field, not a diff. A field the reader changed and then changed back is left out. |
+| `changes[].by`, `changes[].at` | who last changed that field (the name typed in Book Editor) and when (UTC). Optional: older files and an empty name leave them out or `""`. |
+| `comments[].by`, `made`, `edited` | the comment's author, when it was made, and when its words were last edited (absent if never). |
+| `comments[].replies` | the thread under a comment, oldest first: `{ text, by, made, edited? }`. May be empty. |
+| `comments[].resolved` | present when someone marked the comment resolved: `{ by, at }`. Resolved comments are still sent so the author sees them. |
 | `comments` | either **on selected words**: `spread`, `lang`, `quote` (the exact selected words), `position` (character index where `quote` starts in that scene's `text` in that language, counted on the reader's version, i.e. after the reader's own change if there is one), `text`; or **on the whole scene**: `spread`, `text` only. Comments on selected words are on the scene text, not the title. |
 | `layout` | optional: the export target and settings the reader last picked. The author app may ignore it. |
 
 Character positions are counted in UTF-16 code units (JavaScript string index). `quote`
 is the source of truth; `position` only tells repeated quotes apart. If they disagree
 the author app looks for `quote` nearest to `position`.
+
+`by`, `at`, `made`, `edited`, `replies` and `resolved` were added on 2026-11-11 as optional
+fields; `formatVersion` stays 1 and a reader of the file must accept them missing.
 
 Lists may be empty. A changes file with nothing in `changes` or `comments` is not sent.
 

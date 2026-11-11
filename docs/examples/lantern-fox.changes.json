@@ -13,14 +13,18 @@
       "lang": "en",
       "field": "text",
       "was": "One night Pip heard a tiny sniff. A hedgehog sat alone under a fern.\n\n“I can't find my way home,” she whispered.",
-      "now": "One night Pip heard a tiny sniff. A little hedgehog sat all alone under a fern.\n\n“I can't find my way home,” she whispered."
+      "now": "One night Pip heard a tiny sniff. A little hedgehog sat all alone under a fern.\n\n“I can't find my way home,” she whispered.",
+      "by": "Ana",
+      "at": "2026-11-06T09:10:00Z"
     },
     {
       "spread": 3,
       "lang": "pl",
       "field": "title",
       "was": "Mały most",
-      "now": "Mostek nad strumykiem"
+      "now": "Mostek nad strumykiem",
+      "by": "Ana",
+      "at": "2026-11-06T09:11:00Z"
     }
   ],
   "comments": [
@@ -29,18 +33,33 @@
       "lang": "zh",
       "quote": "纸灯笼",
       "position": 41,
-      "text": "Maybe say 红灯笼?"
+      "text": "Maybe say 红灯笼?",
+      "by": "Ana",
+      "made": "2026-11-06T09:20:00Z",
+      "replies": [
+        {
+          "text": "I think it is fine.",
+          "by": "Ola",
+          "made": "2026-11-06T09:30:00Z"
+        }
+      ]
     },
     {
       "spread": 2,
       "lang": "en",
       "quote": "little hedgehog",
       "position": 36,
-      "text": "Is she a baby hedgehog?"
+      "text": "Is she a baby hedgehog?",
+      "by": "Ana",
+      "made": "2026-11-06T09:21:00Z",
+      "replies": []
     },
     {
       "spread": 4,
-      "text": "Lovely ending."
+      "text": "Lovely ending.",
+      "by": "Ana",
+      "made": "2026-11-06T09:22:00Z",
+      "replies": []
     }
   ],
   "layout": {

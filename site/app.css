@@ -211,6 +211,25 @@ button.cmq { min-height: 36px; }
 .composer { background: var(--card); border: 2px solid var(--green); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .composer textarea { width: 100%; min-height: 110px; border: 2px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--card); font-size: 17px; }
 .emptyc { border: 2px dashed var(--line); border-radius: 14px; padding: 12px 14px; font-size: 15px; color: var(--muted); }
+/* track changes: who and when, added words underlined, removed words struck through */
+.tc { flex-basis: 100%; display: flex; flex-direction: column; gap: 8px; background: var(--soft); border-radius: 12px; padding: 10px 12px; }
+.tchead { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.tcf { display: flex; flex-direction: column; gap: 4px; }
+.diff { font-family: var(--serif); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 17px; line-height: 1.6; background: var(--card); border-radius: 8px; padding: 8px 12px; }
+.diff ins { text-decoration: underline 2px; text-underline-offset: 3px; color: var(--ins-d); background: var(--ins); border-radius: 3px; }
+.diff del { text-decoration: line-through 2px; color: var(--bad); background: var(--bad-l); border-radius: 3px; }
+.cmmeta { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; font-size: 14px; }
+.cmmeta b { font-size: 15px; }
+.cmmeta > span:not(.flbl) { color: var(--muted); }
+.cmacts { justify-content: flex-end; gap: 6px; }
+.cmacts .cml { flex: 1 1 100%; }
+.rp { border-left: 3px solid var(--line); padding: 2px 0 2px 10px; display: flex; flex-direction: column; gap: 6px; }
+.rp p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rp textarea, .cm #ced { width: 100%; min-height: 80px; border: 2px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--card); font-size: 16px; }
+.cm.isdone { opacity: .85; background: var(--soft); }
+.resbtn { align-self: flex-start; }
+.whoami { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 15px; color: var(--muted); }
+.whoami .btn { min-height: 40px; }
 @media (max-width: 1000px) {
   .three { grid-template-columns: minmax(0, 1fr); }
   .toc { display: none; }
