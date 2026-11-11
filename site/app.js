@@ -1,8 +1,10 @@
 // Book Editor — app shell: display language, My shelf / Library tabs, read-only reader (step 3);
-// My shelf in this browser's storage, Select → Move to / Delete (step 4).
+// My shelf in this browser's storage, Select → Move to / Delete (step 4);
+// a shelf book's Story: scene list, words edited in place, comments, autosave (step 5).
 // File formats: docs/book-file-format.md. No build step; plain ES modules.
 import { UI, langName } from './i18n.js';
 import * as Shelf from './shelf.js';
+import * as Work from './work.js';
 
 // ---- Library location ----
 // The real Library sits at the app's own address under library/ (behind Cloudflare Access).
@@ -34,6 +36,13 @@ const S = {
   adding: null,                                                // { id, n, m } while a book is copied in
   mine: null,                                                  // { id, rec, urls } the shelf book being read
   selecting: false, picked: new Set(), sheet: null, closed: {},  // sheet: 'move' | 'delete'
+  // Story (a shelf book being edited)
+  view: {}, scene: {},                                         // id -> story language shown ('all' = every one) / last scene
+  sel: null,                                                   // { n, lang, start, end } words last selected in a story box
+  compose: null,                                               // { n, lang?, quote?, position?, draft } comment being written
+  delC: null, redo: null,                                      // comment id asking "Delete?" / words to put back after Undo
+  dirty: false, save: '', saveFailed: false,                   // save: '' | 'saving' | 'saved' | 'fail'
+  composing: false, renderLater: false, fromBook: false,
 };
 const T = (k, v = {}) => String(UI[S.ui][k] ?? UI.en[k] ?? k).replace(/\{(\w+)\}/g, (_, x) => v[x]);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -103,7 +112,7 @@ const onShelf = id => !!S.shelf?.some(b => b.id === id);
 
 async function addBook(id) {
   if (S.shelfError) return toast(T('noStore'));
-  if (onShelf(id)) return go(`mine/${encodeURIComponent(id)}/0`);
+  if (onShelf(id)) return go(bookHash(id));
   if (S.adding) return;
   S.adding = { id, n: 0, m: 0 }; render();
   try {
@@ -119,6 +128,7 @@ async function addBook(id) {
 
 function closeMine() {
   if (!S.mine) return;
+  flushSave();
   for (const u of Object.values(S.mine.urls || {})) URL.revokeObjectURL(u);
   S.mine = null;
 }
@@ -145,11 +155,12 @@ async function loadMine(id) {
   render();
 }
 
-// ---- Routes: #library, #shelf, #read/<id>/<page> (Library copy), #mine/<id>/<page> (shelf copy).
-// Page 0 = cover. Browser Back works. ----
+// ---- Routes: #library, #shelf, #read/<id>/<page> (Library copy), #mine/<id>/<page> (shelf copy, read),
+// #book/<id>/story/<scene> and #book/<id>/layout (shelf copy, edit). Page 0 = cover. Browser Back works. ----
 function parseRoute() {
-  const [view, id, at] = decodeURIComponent(location.hash.slice(1)).split('/');
+  const [view, id, at, n] = decodeURIComponent(location.hash.slice(1)).split('/');
   if (view === 'shelf') return { view: 'shelf' };
+  if (view === 'book' && id) return at === 'layout' ? { view, id, tab: 'layout' } : { view, id, tab: 'story', n: Math.max(1, parseInt(n, 10) || 1) };
   if ((view === 'read' || view === 'mine') && id) return { view, id, at: Math.max(0, parseInt(at, 10) || 0) };
   return { view: 'library' };
 }
@@ -158,14 +169,20 @@ const go = (hash, replace = false) => {
   if (replace) onRoute();
 };
 function onRoute() {
-  const prev = S.route;
-  S.route = parseRoute();
-  if (S.route.view !== 'shelf') { S.selecting = false; S.picked.clear(); S.sheet = null; }
-  if (S.route.view === 'read' && S.lib) loadBook(S.route.id);
-  if (S.route.view === 'mine') loadMine(S.route.id); else closeMine();
+  const prev = S.route, r = S.route = parseRoute();
+  if (r.view !== 'shelf') { S.selecting = false; S.picked.clear(); S.sheet = null; }
+  if (prev.view === 'book' && (r.view !== 'book' || r.id !== prev.id || r.n !== prev.n || r.tab !== prev.tab)) {
+    flushSave();
+    Object.assign(S, { compose: null, sel: null, delC: null, redo: null });
+  }
+  if (r.view !== 'mine') S.fromBook = false;
+  if (r.view === 'book' && r.tab === 'story') S.scene[r.id] = r.n;
+  if (r.view === 'read' && S.lib) loadBook(r.id);
+  if (r.view === 'mine' || r.view === 'book') loadMine(r.id); else closeMine();
   render();
-  if (prev.view !== S.route.view || prev.id !== S.route.id) window.scrollTo(0, 0);
+  if (prev.view !== r.view || prev.id !== r.id || prev.n !== r.n || prev.tab !== r.tab) window.scrollTo(0, 0);
 }
+const bookHash = (id, n) => `book/${encodeURIComponent(id)}/story/${n || S.scene[id] || 1}`;
 
 // ---- Icons ----
 const ICON_BOOK = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 6c-2-1.5-5-2-8-1.5v14c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5v-14c-3-.5-6 0-8 1.5z"/><path d="M12 6v14"/></svg>';
@@ -222,7 +239,7 @@ const folderDot = i => `<span class="dot" style="background:hsl(${30 + i * 140} 
 function shelfCard(b) {
   const title = titleOf(b.titles, b.languages, S.ui), picked = S.picked.has(b.id), cover = S.covers[b.id];
   const inner = `<span class="cov">${cover ? `<img src="${esc(cover)}" alt="">` : ''}${b.opened ? '' : `<span class="badge">${esc(T('isNew'))}</span>`}${S.selecting ? `<span class="pickbox" aria-hidden="true">${picked ? '✓' : ''}</span>` : ''}</span>
-    <b>${esc(title)}</b><span class="libmeta">${esc(b.opened ? T('stNone') : T('stNew'))}</span>`;
+    <b>${esc(title)}</b><span class="libmeta">${esc(!b.opened ? T('stNew') : countText(Work.counts(b)) || T('stNone'))}</span>`;
   return S.selecting ? `<button class="bk" data-act="pick" data-k="${esc(b.id)}" aria-pressed="${picked}">${inner}</button>`
     : `<button class="bk" data-act="open-mine" data-k="${esc(b.id)}">${inner}</button>`;
 }
@@ -311,22 +328,177 @@ function readerScreen() {
   const call = `<div class="rcall"><p>${esc(T(onShelf(id) ? 'onShelfMsg' : 'wantEdit'))}</p>${addButton(id, true)}</div>`;
   return readerBody({ id, book: B.book, story: B.story, src: p => B.dir + p, back, tag: T('readOnly'), call });
 }
+// The reader's own copy, read with their changed words in it. Back returns to editing.
 function mineScreen() {
+  const { id } = S.route, M = S.mine, back = `<button class="btn bigbtn" data-act="back-edit">${esc(T('backEdit'))}</button>`;
+  if (!M || M.id !== id || M.loading) return `<div class="rtop">${back}</div><div class="loading">${esc(T('loading'))}</div>`;
+  if (M.gone) return `<div class="rtop">${back}</div>${problem('notOnShelf')}`;
+  return readerBody({ id, book: M.rec.book, story: Work.appliedStory(M.rec), src: p => M.urls[p], back, tag: T('onShelfTag'), call: '' });
+}
+
+// ---- A shelf book: top bar, Story / Layout steps ----
+const ICON_CM = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>';
+const ICON_CM_S = ICON_CM.replace(/width="20" height="20"/, 'width="14" height="14"');
+const ICON_EYE = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+
+function countText({ c, n }) {
+  return [c && T(c === 1 ? 'chg1' : 'chgN', { n: c }), n && T(n === 1 ? 'cm1' : 'cmN', { n })].filter(Boolean).join(', ');
+}
+function statusBox(rec) {
+  const k = Work.counts(rec);
+  return k.c + k.n
+    ? `<div class="status todo" id="stbox"><b>${esc(T('notSent'))}</b><span>${esc(countText(k))} · ${esc(T('keptHere'))}</span></div>`
+    : `<div class="status ok" id="stbox"><b>${esc(T('noChg'))}</b><span>${esc(T('noChgT'))}</span></div>`;
+}
+const saveText = () => S.save === 'saving' ? T('saving') : S.save === 'saved' ? T('saved') : S.save === 'fail' ? T('notSaved') : '';
+const viewOf = (id, langs) => {
+  const v = S.view[id];
+  return v === 'all' || langs.includes(v) ? v : langs.includes(S.ui) ? S.ui : langs[0];
+};
+
+function bookScreen() {
   const { id } = S.route, M = S.mine, back = `<button class="btn bigbtn" data-act="go" data-k="shelf">${esc(T('backShelf'))}</button>`;
   if (!M || M.id !== id || M.loading) return `<div class="rtop">${back}</div><div class="loading">${esc(T('loading'))}</div>`;
   if (M.gone) return `<div class="rtop">${back}</div>${problem('notOnShelf')}`;
-  const call = `<div class="rcall soft"><p>${esc(T('editSoon'))}</p></div>`;
-  return readerBody({ id, book: M.rec.book, story: M.rec.story, src: p => M.urls[p], back, tag: T('onShelfTag'), call });
+  const rec = M.rec, book = rec.book, tl = book.titles?.[S.ui] ? S.ui : book.languages[0];
+  const k = Work.counts(rec), story = S.route.tab === 'story';
+  const step = (key, icon, sub, subId) => `<button class="step" role="tab" aria-selected="${S.route.tab === key}" data-act="tab" data-k="${key}"><span class="ic">${icon}</span>
+    <span class="st"><b>${esc(T(key))}</b><span${subId ? ` id="${subId}"` : ''}>${esc(sub)}</span></span></button>`;
+  return `<div class="rtop">${back}<h2 lang="${esc(tl)}">${esc(titleOf(book.titles, book.languages, S.ui))}</h2>
+      <button class="btn bigbtn" data-act="read-mine">${ICON_READ}${esc(T('read'))}</button></div>
+    ${statusBox(rec)}
+    <div class="steps" role="tablist">${step('story', ICON_PEN, k.c + k.n ? countText(k) : T('storySub'), 'storysub')}${step('layout', ICON_EYE, T('layoutSub'))}</div>
+    ${story ? storyView(rec) : `<section class="card"><div class="msg"><p>${esc(T('layoutSoon'))}</p></div></section>`}`;
+}
+
+function chgHtml(rec, n, l) {
+  if (Work.isChanged(rec, n, 'title', l) || Work.isChanged(rec, n, 'text', l)) {
+    const t = Work.bookValue(rec, n, 'title', l), x = Work.bookValue(rec, n, 'text', l);
+    return `<span class="edited">✎ ${esc(T('changed'))}</span><button class="btn quiet" data-act="undo-lang" data-k="${esc(l)}">${esc(T('undoHere'))}</button>
+      <details><summary>${esc(T('seeWas'))}</summary><div class="was" lang="${esc(l)}">${t ? `<b>${esc(t)}</b>\n\n` : ''}${esc(x)}</div></details>`;
+  }
+  if (S.redo && S.redo.n === n && S.redo.lang === l) return `<button class="btn quiet" data-act="redo-lang" data-k="${esc(l)}">${esc(T('redoHere'))}</button>`;
+  return '';
+}
+const quoteChip = (c, act) => c.quote
+  ? (act ? `<button class="cmq" data-act="show-comment" data-k="${esc(c.id)}" lang="${esc(c.lang)}">“${esc(c.quote)}”</button>` : `<span class="cmq" lang="${esc(c.lang)}">“${esc(c.quote)}”</span>`)
+  : `<span class="cmq whole">${esc(T('wholeScene'))}</span>`;
+
+function storyView(rec) {
+  const id = rec.id, book = rec.book, langs = book.languages, story = rec.story, m = story.length, urls = S.mine.urls;
+  const n = Math.min(S.route.n, m), view = viewOf(id, langs), all = view === 'all', shown = all ? langs : [view];
+  const tl = all ? (langs.includes(S.ui) ? S.ui : langs[0]) : view, P = book.pictures || {};
+  const thumb = k => { const p = P.colour?.[k] || P.small?.[k] || P.colouring?.[k]; return p && urls[p] ? `<img src="${esc(urls[p])}" alt="">` : ''; };
+  const sceneTitle = x => Work.value(rec, x, 'title', tl);
+  const toc = `<nav class="toc" aria-labelledby="toch"><div class="lbl" id="toch">${esc(T('scenes'))}</div>${story.map(s => {
+    const x = s.number, cc = Work.sceneComments(rec, x).length;
+    return `<button data-act="scene" data-k="${x}" aria-current="${x === n}"><span class="th">${thumb(String(x))}</span><span class="num">${x}</span>
+      <span class="tt" id="tt-${x}" lang="${esc(tl)}">${esc(sceneTitle(x))}</span>
+      <span class="marks"><span class="edited" id="tm-${x}" title="${esc(T('changed'))}" ${Work.sceneChanged(rec, x) ? '' : 'hidden'}>✎</span>${cc ? `<span class="cmc" title="${esc(T(cc === 1 ? 'cm1' : 'cmN', { n: cc }))}">${ICON_CM_S}${cc}</span>` : ''}</span></button>`;
+  }).join('')}</nav>`;
+  const mob = `<select class="scenesel" id="at" aria-label="${esc(T('scenes'))}">${story.map(s =>
+    `<option value="${s.number}" id="op-${s.number}" ${s.number === n ? 'selected' : ''}>${esc(T('sceneN', { n: s.number }))} · ${esc(sceneTitle(s.number))}${Work.sceneChanged(rec, s.number) ? ' ✎' : ''}</option>`).join('')}</select>`;
+  const seg = langs.length > 1 ? `<div class="seg" role="group" aria-label="${esc(T('showLang'))}">${langs.map(l =>
+    `<button lang="${esc(l)}" aria-pressed="${l === view}" data-act="view" data-k="${esc(l)}">${esc(langName(l, book.languageNames))}</button>`).join('')}
+    <button aria-pressed="${all}" data-act="view" data-k="all">${esc(T('allLangs'))}</button></div>` : '<span></span>';
+  const block = l => {
+    const tid = `t-${n}-${l}`, xid = `x-${n}-${l}`, on = Work.isChanged(rec, n, 'title', l) || Work.isChanged(rec, n, 'text', l);
+    return `<div class="langblock">${all ? `<div class="lname" lang="${esc(l)}">${esc(langName(l, book.languageNames))}</div>` : ''}
+      <label class="flbl" for="${tid}">${esc(T('fTitle'))}</label>
+      <input class="titlein" id="${tid}" data-f="title" data-l="${esc(l)}" data-n="${n}" lang="${esc(l)}" autocomplete="off" value="${esc(Work.value(rec, n, 'title', l))}">
+      <label class="flbl" for="${xid}">${esc(T('fText'))}</label>
+      <textarea class="textin ${all ? 'short' : ''}" id="${xid}" data-f="text" data-l="${esc(l)}" data-n="${n}" lang="${esc(l)}">${esc(Work.value(rec, n, 'text', l))}</textarea>
+      <div class="chg" id="chg-${esc(l)}" data-on="${on}">${chgHtml(rec, n, l)}</div></div>`;
+  };
+  const nav = `<div class="spnav"><span>${n > 1 ? `<button class="btn bigbtn" data-act="scene" data-k="${n - 1}">${esc(T('prevScene', { n: n - 1 }))}</button>` : ''}</span>
+    <span>${n < m ? `<button class="btn primary bigbtn" data-act="scene" data-k="${n + 1}">${esc(T('nextScene', { n: n + 1 }))}</button>` : ''}</span></div>`;
+  const cms = Work.sceneComments(rec, n), C = S.compose?.n === n ? S.compose : null;
+  const composer = C ? `<div class="composer">${quoteChip(C)}<label class="flbl" for="cmtext">${esc(T('yourComment'))}</label>
+      <textarea id="cmtext">${esc(C.draft || '')}</textarea>
+      <div class="row"><button class="btn primary" data-act="save-comment">${esc(T('save'))}</button><button class="btn" data-act="cancel-comment">${esc(T('cancel'))}</button></div></div>` : '';
+  const list = cms.map(c => `<div class="cm"><div class="cmtop">${quoteChip(c, true)}${c.quote ? `<span class="cml">${esc(langName(c.lang, book.languageNames))}</span>` : ''}</div>
+      <p>${esc(c.text)}</p>${S.delC === c.id
+        ? `<div class="row delask"><b>${esc(T('delC'))}</b><button class="btn danger-solid" data-act="del-c-yes" data-k="${esc(c.id)}">${esc(T('del'))}</button><button class="btn" data-act="del-c-no">${esc(T('keepIt'))}</button></div>`
+        : `<button class="btn quiet del-c" data-act="del-comment" data-k="${esc(c.id)}">${esc(T('del'))}</button>`}</div>`).join('');
+  return `<div class="three">${toc}
+    <section class="card scenecard">${mob}
+      <div class="scenehead"><span class="lbl">${esc(T('sceneOf', { n, m }))}</span><span class="savest ${S.save === 'fail' ? 'bad' : ''}" id="savest" aria-live="polite">${esc(saveText())}</span></div>
+      <div class="row between">${seg}<button class="btn" data-act="comment">${ICON_CM}${esc(T('comment'))}</button></div>
+      ${shown.map(block).join('')}${nav}</section>
+    <aside class="cmside" aria-labelledby="cmh"><h3 class="lbl" id="cmh">${esc(T('commentsOn'))}</h3>${composer}${list || (C ? '' : `<div class="emptyc">${esc(T('noComments'))}</div>`)}</aside></div>`;
+}
+
+// While typing nothing is re-rendered (that would break typing and Chinese input): only the marks around the boxes change.
+function refreshMarks() {
+  const M = S.mine, r = S.route;
+  if (!M?.rec || r.view !== 'book' || M.id !== r.id) return;
+  const rec = M.rec, n = r.n, langs = rec.book.languages, view = viewOf(rec.id, langs);
+  const tl = view === 'all' ? (langs.includes(S.ui) ? S.ui : langs[0]) : view;
+  const st = document.getElementById('stbox');
+  if (st) st.outerHTML = statusBox(rec);
+  const k = Work.counts(rec), sub = document.getElementById('storysub');
+  if (sub) sub.textContent = k.c + k.n ? countText(k) : T('storySub');
+  const ch = Work.sceneChanged(rec, n), title = Work.value(rec, n, 'title', tl);
+  const tm = document.getElementById(`tm-${n}`); if (tm) tm.hidden = !ch;
+  const tt = document.getElementById(`tt-${n}`); if (tt) tt.textContent = title;
+  const op = document.getElementById(`op-${n}`); if (op) op.textContent = `${T('sceneN', { n })} · ${title}${ch ? ' ✎' : ''}`;
+  for (const l of langs) {
+    const box = document.getElementById(`chg-${l}`); if (!box) continue;
+    const on = String(Work.isChanged(rec, n, 'title', l) || Work.isChanged(rec, n, 'text', l));
+    if (box.dataset.on !== on) { box.dataset.on = on; box.innerHTML = chgHtml(rec, n, l); }
+  }
+}
+let marksTimer;
+const scheduleMarks = () => { clearTimeout(marksTimer); marksTimer = setTimeout(refreshMarks, 150); };
+
+// ---- Autosave: a short pause after typing, and at once when leaving the book or the page ----
+let saveTimer;
+function setSave(st) {
+  S.save = st;
+  const el = document.getElementById('savest');
+  if (el) { el.textContent = saveText(); el.classList.toggle('bad', st === 'fail'); }
+}
+function queueSave() {
+  S.dirty = true; S.redo = null; setSave('saving');
+  clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 600);
+}
+function flushSave() {
+  clearTimeout(saveTimer);
+  const M = S.mine;
+  if (!M?.rec || !S.dirty) return;
+  S.dirty = false;
+  const { id, rec } = M, edits = { ...(rec.edits || {}) }, comments = (rec.comments || []).map(c => ({ ...c }));
+  Shelf.saveWork(id, edits, comments).then(changed => {
+    const b = S.shelf?.find(x => x.id === id);
+    if (b) Object.assign(b, { edits, comments, changed });
+    S.saveFailed = false;
+    if (S.mine?.id === id && !S.dirty) setSave('saved');
+  }).catch(e => {
+    if (S.mine?.id === id) { S.dirty = true; setSave('fail'); }
+    if (!S.saveFailed) toast(T(e?.name === 'QuotaExceededError' ? 'full' : 'notSaved'));
+    S.saveFailed = true;
+  });
 }
 
 function render() {
+  // Never rebuild the page in the middle of Chinese/Japanese/Korean typing: wait for the word to finish.
+  if (S.composing) { S.renderLater = true; return; }
   document.documentElement.lang = S.ui;
   const r = S.route;
-  const main = r.view === 'read' ? readerScreen() : r.view === 'mine' ? mineScreen()
+  const main = r.view === 'read' ? readerScreen() : r.view === 'mine' ? mineScreen() : r.view === 'book' ? bookScreen()
     : homeTabs(r.view) + (r.view === 'shelf' ? shelfView() : libraryView());
   const app = document.getElementById('app');
+  // Keep the box being typed in: same element id → same focus, cursor, selection and scroll.
+  const f = document.activeElement, keep = f?.id && app.contains(f)
+    ? { id: f.id, s: f.selectionStart, e: f.selectionEnd, d: f.selectionDirection, top: f.scrollTop } : null;
   app.classList.toggle('selecting', S.selecting && r.view === 'shelf');
   app.innerHTML = header() + main + actBar() + shelfSheet() + langSheet();
+  const el = keep && document.getElementById(keep.id);
+  if (el) {
+    el.focus({ preventScroll: true });
+    if (typeof keep.s === 'number' && el.setSelectionRange) try { el.setSelectionRange(keep.s, keep.e, keep.d || 'none'); } catch { /* not a text box */ }
+    el.scrollTop = keep.top;
+  }
 }
 let toastTimer;
 function toast(m) {
@@ -372,7 +544,7 @@ document.addEventListener('click', e => {
   const a = b.dataset.act, k = b.dataset.k;
   if (a === 'go') return go(k);
   if (a === 'read') return go(`read/${encodeURIComponent(k)}/0`);
-  if (a === 'open-mine') return go(`mine/${encodeURIComponent(k)}/0`);
+  if (a === 'open-mine') return go(bookHash(k));
   if (a === 'rnav') return go(`${S.route.view}/${encodeURIComponent(S.route.id)}/${k}`, true);
   if (a === 'rlang') { S.readLang[S.route.id] = k; return render(); }
   if (a === 'add') return addBook(k);
@@ -392,9 +564,68 @@ document.addEventListener('click', e => {
   if (a === 'move-to') return moveTo(k);
   if (a === 'create-folder') return createFolder();
   if (a === 'del-yes') return deletePicked();
+  return storyClick(a, k);
 });
+
+// ---- Story actions ----
+function storyClick(a, k) {
+  const M = S.mine, r = S.route;
+  if (!M?.rec || r.view === 'shelf' || r.view === 'library') return;
+  const rec = M.rec, id = rec.id, n = r.n;
+  if (a === 'read-mine') { S.fromBook = true; return go(`mine/${encodeURIComponent(id)}/${r.tab === 'story' ? n : 0}`); }
+  if (a === 'back-edit') {
+    if (S.fromBook) return history.back();
+    return go(bookHash(id, S.route.at || undefined), true);
+  }
+  if (a === 'tab') return go(k === 'layout' ? `book/${encodeURIComponent(id)}/layout` : bookHash(id), true);
+  if (a === 'scene') return go(bookHash(id, +k), true);
+  if (a === 'view') { S.view[id] = k; S.sel = null; return render(); }
+  if (a === 'undo-lang') {
+    const keepWords = Object.fromEntries(Work.FIELDS.map(f => [f, Work.value(rec, n, f, k)]));
+    Work.undo(rec, n, k); queueSave(); S.redo = { n, lang: k, words: keepWords }; return render();
+  }
+  if (a === 'redo-lang' && S.redo) {
+    for (const f of Work.FIELDS) Work.setValue(rec, n, f, k, S.redo.words[f]);
+    queueSave(); return render();
+  }
+  if (a === 'comment') {
+    const sel = S.sel, t = sel && sel.n === n && sel.end > sel.start ? Work.value(rec, n, 'text', sel.lang) : '';
+    let start = sel?.start, end = sel?.end;
+    if (t) { while (start < end && /\s/.test(t[start])) start++; while (end > start && /\s/.test(t[end - 1])) end--; }
+    S.compose = t && end > start ? { n, lang: sel.lang, quote: t.slice(start, end), position: start, draft: S.compose?.draft || '' }
+      : { n, draft: S.compose?.draft || '' };
+    render();
+    const box = document.getElementById('cmtext');
+    box?.focus({ preventScroll: true }); box?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return;
+  }
+  if (a === 'cancel-comment') { S.compose = null; return render(); }
+  if (a === 'save-comment') {
+    const box = document.getElementById('cmtext'), text = (box?.value || '').trim();
+    if (!text) return box?.focus();
+    rec.comments = [...(rec.comments || []), Work.newComment({ spread: n, ...S.compose, text })];
+    S.compose = null; S.sel = null; queueSave(); render();
+    return document.querySelector('[data-act="comment"]')?.focus();
+  }
+  if (a === 'del-comment') { S.delC = k; return render(); }
+  if (a === 'del-c-no') { S.delC = null; return render(); }
+  if (a === 'del-c-yes') { rec.comments = (rec.comments || []).filter(c => c.id !== k); S.delC = null; queueSave(); return render(); }
+  if (a === 'show-comment') {
+    const c = (rec.comments || []).find(x => x.id === k);
+    if (!c) return;
+    const v = viewOf(id, rec.book.languages);
+    if (v !== 'all' && v !== c.lang) { S.view[id] = c.lang; render(); }
+    const ta = document.getElementById(`x-${n}-${c.lang}`);
+    if (!ta) return;
+    const i = Work.findQuote(ta.value, c.quote, c.position);
+    ta.focus({ preventScroll: true });
+    if (i >= 0) ta.setSelectionRange(i, i + c.quote.length);
+    ta.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+}
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && S.langSheet) { S.langSheet = false; render(); return; }
+  if (e.key === 'Escape' && S.compose && S.route.view === 'book') { S.compose = null; render(); return document.querySelector('[data-act="comment"]')?.focus(); }
   if (e.key === 'Escape' && S.sheet) return closeSheet();
   if (e.key === 'Enter' && e.target.id === 'nf') { e.preventDefault(); return createFolder(); }
   if ((S.route.view !== 'read' && S.route.view !== 'mine') || S.langSheet || e.target.matches('input,textarea,select')) return;
@@ -405,6 +636,32 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'ArrowLeft' && at > 0) go(base + (at - 1), true);
 });
 window.addEventListener('hashchange', onRoute);
+
+// Typing: store the words at once, save after a short pause, refresh the marks; never re-render here.
+document.addEventListener('input', e => {
+  const el = e.target;
+  if (el.id === 'cmtext' && S.compose) { S.compose.draft = el.value; return; }
+  if (!el.dataset?.f || S.route.view !== 'book' || !S.mine?.rec) return;
+  Work.setValue(S.mine.rec, +el.dataset.n, el.dataset.f, el.dataset.l, el.value);
+  queueSave(); scheduleMarks();
+});
+document.addEventListener('change', e => {
+  if (e.target.id === 'at' && S.mine?.rec) go(bookHash(S.mine.rec.id, +e.target.value), true);
+});
+document.addEventListener('compositionstart', () => { S.composing = true; });
+document.addEventListener('compositionend', () => {
+  S.composing = false;
+  if (S.renderLater) { S.renderLater = false; render(); }
+});
+// Remember the words selected in a story box, so Comment can quote them after the box loses focus.
+function trackSel() {
+  const el = document.activeElement;
+  if (S.route.view === 'book' && el?.dataset?.f === 'text') S.sel = { n: +el.dataset.n, lang: el.dataset.l, start: el.selectionStart, end: el.selectionEnd };
+}
+['selectionchange', 'select', 'keyup', 'mouseup', 'touchend'].forEach(ev => document.addEventListener(ev, trackSel));
+// Leaving the page (closing the tab, switching app on a phone): save now.
+window.addEventListener('pagehide', flushSave);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSave(); });
 
 S.route = parseRoute();
 render();

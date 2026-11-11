@@ -2,10 +2,10 @@
 // Books are ~10–20 MB with pictures, too big for localStorage. Nothing here is ever uploaded.
 //
 // Stores (database "book-editor", version 1):
-//   books  keyPath id      { id, bookVersion, fingerprint, titles, languages, book, story, folder, added, opened }
+//   books  keyPath id      { id, bookVersion, fingerprint, titles, languages, book, story, folder, added, opened,
+//                            edits, comments, changed }   (edits/comments/changed: see work.js)
 //   files  key [id, path]  Blob (pictures, as listed in book.json "pictures")
 //   meta   key 'folders'   [folder names, in the order they were made]
-// Step 5 adds the user's edits and comments to the book record.
 
 const NAME = 'book-editor', VERSION = 1;
 let dbp = null;
@@ -109,6 +109,27 @@ export async function markOpened(id) {
   const rec = await asPromise(s.get(id));
   if (rec && !rec.opened) { rec.opened = true; s.put(rec); }
   await finished(tx);
+}
+
+/**
+ * Save the reader's edits and comments onto the book record (see work.js).
+ * Saves run one after another, so an older save can never land after a newer one.
+ */
+let saving = Promise.resolve();
+export function saveWork(id, edits, comments) {
+  const run = async () => {
+    const d = await db(), tx = d.transaction('books', 'readwrite'), s = tx.objectStore('books');
+    const rec = await asPromise(s.get(id));
+    if (!rec) throw Object.assign(new Error('book gone'), { name: 'NotFoundError' });
+    const changed = new Date().toISOString();
+    Object.assign(rec, { edits, comments, changed });
+    s.put(rec);
+    await finished(tx);
+    return changed;
+  };
+  const p = saving.then(run, run);
+  saving = p.catch(() => {});
+  return p;
 }
 
 /** Move books into a folder ('' = not in a folder). A new folder name is added to the list. */
