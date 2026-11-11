@@ -160,7 +160,9 @@ export const UI = {
 };
 
 // A language's own name for itself, for story languages (any code, not only the display languages).
-export function langName(code) {
+// `names` = the book's optional languageNames (typed-in languages); shown first.
+export function langName(code, names) {
+  if (names?.[code]) return names[code];
   if (UI[code]) return UI[code].name;
   try {
     const n = new Intl.DisplayNames([code], { type: 'language' }).of(code);

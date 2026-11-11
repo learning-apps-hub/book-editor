@@ -47,6 +47,7 @@ file names, so `.jpg` and `.png` are both accepted for any type.
   "exported": "2026-11-05T12:00:00Z",
   "languages": ["en", "zh", "pl", "fr"],
   "titles": { "en": "The Lantern Fox", "zh": "提灯笼的小狐狸", "pl": "Lisek z latarenką", "fr": "Le Renard à la lanterne" },
+  "languageNames": { },
   "scenes": 4,
   "pictures": {
     "colour":    { "1": "pictures/colour/01.jpg", "2": "pictures/colour/02.jpg" },
@@ -66,6 +67,7 @@ file names, so `.jpg` and `.png` are both accepted for any type.
 | `exported` | UTC time of the export, ISO 8601. |
 | `languages` | the book's languages, in the author's order. The first is the book's main language. |
 | `titles` | book title per language. |
+| `languageNames` | optional. A language's own name per code, for languages the author typed in by name (codes like `hakka` or `x-ab12cd`). The app shows this name first, else the browser's name for the code, else the code. May be absent or empty. |
 | `scenes` | number of entries in `story.json`. |
 | `pictures` | per picture type, a map of scene `number` (as a string) → path inside the zip. `covers` uses `front` / `back`. Picture types present = the keys of this object. |
 
@@ -179,6 +181,9 @@ library.json
 
 `bytes` is the total size of the book's folder, so the app can say how much room adding
 it to My shelf takes.
+
+A book entry may also carry `languageNames`, copied from its `book.json`, so Library cards
+name typed-in languages too.
 
 ## Versions
 

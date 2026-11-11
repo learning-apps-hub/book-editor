@@ -212,7 +212,7 @@ function libraryView() {
     const title = titleOf(b.titles, b.languages, S.ui);
     return `<div class="libcard"><button class="bk" data-act="read" data-k="${esc(b.id)}">
         <span class="cov">${b.cover ? `<img src="${esc(S.libBase + b.cover)}" alt="" loading="lazy">` : ''}<span class="readtag">${ICON_READ}${esc(T('read'))}</span></span>
-        <b>${esc(title)}</b><span class="libmeta">${esc((b.languages || []).map(langName).join(' · '))}</span></button>
+        <b>${esc(title)}</b><span class="libmeta">${esc((b.languages || []).map(l => langName(l, b.languageNames)).join(' · '))}</span></button>
       ${addButton(b.id, false)}</div>`;
   };
   return `<p class="intro">${esc(T('libIntro'))}</p>${sampleNote()}<div class="shelf">${books.map(card).join('')}</div>`;
@@ -293,7 +293,7 @@ function readerBody({ id, book, story, src, back, tag, call }) {
   return `<section class="card">
     <div class="rtop">${back}<h2 lang="${esc(lg)}">${esc(title)}</h2><span class="rotag">${esc(tag)}</span></div>
     ${langs.length > 1 ? `<div class="rlangs" role="group" aria-label="${esc(T('readIn'))}"><span class="lbl">${esc(T('readIn'))}</span>${langs.map(l =>
-      `<button class="rlang" lang="${esc(l)}" aria-pressed="${l === lg}" data-act="rlang" data-k="${esc(l)}">${esc(langName(l))}</button>`).join('')}</div>` : ''}
+      `<button class="rlang" lang="${esc(l)}" aria-pressed="${l === lg}" data-act="rlang" data-k="${esc(l)}">${esc(langName(l, book.languageNames))}</button>`).join('')}</div>` : ''}
     <div class="rbook ${next ? 'tap' : ''}" ${next ? `data-act="rnav" data-k="${at + 1}"` : ''}>${page}</div>
     <div class="rnav"><span>${at > 0 ? `<button class="btn" data-act="rnav" data-k="${at - 1}">${esc(T('rPrev'))}</button>` : ''}</span>
       <span class="pn">${at === 0 ? esc(T('cover')) : esc(T('pageOf', { n: at, m }))}</span>
