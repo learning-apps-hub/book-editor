@@ -119,6 +119,44 @@ export function diff(was, now) {
   return out;
 }
 
+// The diff in runs: each change gets a number `h`; changed words with only spaces between them are one change
+// (so "small fox" → "little red fox" is one change, not two). Those spaces are 'glue': in both texts.
+function runs(was, now) {
+  const d = diff(was, now), out = [];
+  let h = -1, open = false;
+  d.forEach((x, i) => {
+    if (x.t !== 'same') { if (!open) { h++; open = true; } out.push({ ...x, h }); }
+    else if (open && /^\s+$/.test(x.s) && d[i + 1]) out.push({ t: 'glue', s: x.s, h });
+    else { open = false; out.push({ t: 'same', s: x.s, h: -1 }); }
+  });
+  return out;
+}
+/**
+ * The reader's changes in one field, one per change: [{ was, now, at }].
+ * `at` = where `now` starts in the reader's text (for marking it); a removal has now = ''.
+ */
+export function hunks(was, now) {
+  const out = []; let at = 0;
+  for (const r of runs(was, now)) {
+    if (r.t === 'same') { at += r.s.length; continue; }
+    const cur = out[r.h] || (out[r.h] = { was: '', now: '', at });
+    if (r.t !== 'ins') cur.was += r.s;
+    if (r.t !== 'del') { cur.now += r.s; at += r.s.length; }
+  }
+  return out;
+}
+/** The reader's text with change number `i` put back to the book's words (the others stay). */
+export function undoHunk(was, now, i) {
+  return runs(was, now).map(r => r.t === 'same' || r.t === 'glue' || (r.h === i ? r.t === 'del' : r.t === 'ins') ? r.s : '').join('');
+}
+/** Put `words` in place of the reader's text from `start` to `end` (an empty `words` takes them out). */
+export function replaceRange(rec, n, field, lang, start, end, words, by) {
+  const t = value(rec, n, field, lang);
+  // Taking words out of the middle of a sentence: don't leave two spaces behind.
+  if (!words && t[end] === ' ' && (start === 0 || /\s/.test(t[start - 1]))) end++;
+  setValue(rec, n, field, lang, t.slice(0, start) + words + t.slice(end), by);
+}
+
 /**
  * The changes file (docs/book-file-format.md §2), or null when there is nothing to send.
  * A comment's position follows its words if the reader edited the text after commenting.
