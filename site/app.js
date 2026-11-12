@@ -1,6 +1,6 @@
 // Book Editor — app shell: display language, My shelf / Library tabs, read-only reader (step 3);
 // My shelf in this browser's storage, Select → Move to / Delete (step 4);
-// a shelf book's Story: scene list, words edited in place, comments, autosave (step 5);
+// a shelf book's Story: scene list, the story shown once with changes and comments marked in it, select words → Comment / Replace, autosave (step 5);
 // the reader's identity: picture + colour + optional nickname, also their highlighter (identity.js).
 // File formats: docs/book-file-format.md. No build step; plain ES modules.
 import { UI, langName } from './i18n.js';
@@ -40,7 +40,7 @@ const S = {
   selecting: false, picked: new Set(), sheet: null, closed: {},  // sheet: 'move' | 'delete'
   // Story (a shelf book being edited)
   view: {}, scene: {},                                         // id -> story language shown ('all' = every one) / last scene
-  sel: null,                                                   // { n, lang, start, end } words last selected in a story box
+  pop: null,                                                   // { n, f, l, start, end, quote, draft, top } words selected in the story
   compose: null,                                               // { n, lang?, quote?, position?, draft } comment being written
   delC: null, redo: null,                                      // comment id asking "Delete?" / words to put back after Undo
   dirty: false, save: '', saveFailed: false,                   // save: '' | 'saving' | 'saved' | 'fail'
@@ -180,7 +180,7 @@ function onRoute() {
   if (r.view !== 'shelf') { S.selecting = false; S.picked.clear(); S.sheet = null; }
   if (prev.view === 'book' && (r.view !== 'book' || r.id !== prev.id || r.n !== prev.n || r.tab !== prev.tab)) {
     flushSave();
-    Object.assign(S, { compose: null, sel: null, delC: null, redo: null, reply: null, editC: null });
+    Object.assign(S, { compose: null, pop: null, delC: null, redo: null, reply: null, editC: null });
   }
   if (r.view !== 'mine') S.fromBook = false;
   if (r.view === 'book' && r.tab === 'story') S.scene[r.id] = r.n;
@@ -412,19 +412,67 @@ function bookScreen() {
     ${story ? storyView(rec) : `<section class="card"><div class="msg"><p>${esc(T('layoutSoon'))}</p></div></section>`}`;
 }
 
-// Track changes: each changed field shows the book's words with the reader's changes marked in them
-// (added words underlined, removed words struck through), with who changed it and when.
-const diffHtml = (was, now) => Work.diff(was, now).map(d => d.t === 'ins' ? `<ins>${esc(d.s)}</ins>` : d.t === 'del' ? `<del>${esc(d.s)}</del>` : esc(d.s)).join('');
-function chgHtml(rec, n, l) {
-  const fields = Work.FIELDS.filter(f => Work.isChanged(rec, n, f, l));
-  if (fields.length) {
-    return `<div class="tc"><div class="tchead"><span class="edited">✎ ${esc(T('changed'))}</span><button class="btn quiet" data-act="undo-lang" data-k="${esc(l)}">${esc(T('undoHere'))}</button></div>
-      ${fields.map(f => { const w = Work.editInfo(rec, n, f, l) || {};
-        return `<div class="tcf"${hl(w.by)}><div class="cmmeta"><span class="flbl">${esc(T(f === 'title' ? 'fTitle' : 'fText'))}</span>${byLine(w.by, w.at)}</div>
-          <div class="diff ${f}" lang="${esc(l)}">${diffHtml(Work.bookValue(rec, n, f, l), Work.value(rec, n, f, l))}</div></div>`; }).join('')}</div>`;
+// The story is shown once, as page text (no typing boxes). The reader's changed words are marked in the colour
+// of whoever changed them, commented words in amber. Selecting words opens a pop-up: Comment on them, or Replace them.
+// Removed words leave no gap in the text; they show struck through in the change's note at the side.
+const chKey = (f, l, i) => `${f}|${l}|${i}`;
+const chId = (f, l, i) => `ch-${f}-${l}-${i}`.replace(/[^\w-]/g, '_');
+function markedHtml(rec, n, f, l) {
+  const text = Work.value(rec, n, f, l), E = new Array(text.length).fill(-1), C = new Array(text.length).fill('');
+  if (Work.isChanged(rec, n, f, l))
+    Work.hunks(Work.bookValue(rec, n, f, l), text).forEach((h, i) => { for (let j = h.at; j < h.at + h.now.length; j++) E[j] = i; });
+  if (f === 'text') for (const c of Work.openComments(rec, n)) {
+    if (!c.quote || c.lang !== l) continue;
+    const i = Work.findQuote(text, c.quote, c.position);
+    if (i >= 0) for (let j = i; j < i + c.quote.length; j++) C[j] = C[j] || c.id;
   }
-  if (S.redo && S.redo.n === n && S.redo.lang === l) return `<button class="btn quiet" data-act="redo-lang" data-k="${esc(l)}">${esc(T('redoHere'))}</button>`;
-  return '';
+  const col = hl(Work.editInfo(rec, n, f, l)?.by), out = [];
+  let off = 0;
+  for (const line of text.split('\n')) {
+    let html = '', run = '', e = -1, c = '';
+    const flush = () => {
+      if (!run) return;
+      html += e < 0 && !c ? esc(run) : `<mark class="${e >= 0 ? 'e' : ''}${c ? ' c' : ''}" data-act="mark"${e >= 0 ? ` data-e="${chId(f, l, e)}"${col}` : ''}${c ? ` data-c="${esc(c)}"` : ''}>${esc(run)}</mark>`;
+      run = '';
+    };
+    for (let i = 0; i < line.length; i++) {
+      if (E[off + i] !== e || C[off + i] !== c) { flush(); e = E[off + i]; c = C[off + i]; }
+      run += line[i];
+    }
+    flush();
+    const cls = f === 'title' ? 'stitle' : line.trim() ? '' : 'gap';
+    out.push(`<p data-para data-n="${n}" data-f="${f}" data-l="${esc(l)}" data-off="${off}"${cls ? ` class="${cls}"` : ''}>${html}</p>`);
+    off += line.length + 1;
+  }
+  return out.join('');
+}
+// One note per run of changed words, in every language of the scene: the book's words struck through, the new ones, Undo.
+function changeNotes(rec, n) {
+  const out = [];
+  for (const l of rec.book.languages) for (const f of Work.FIELDS) {
+    if (!Work.isChanged(rec, n, f, l)) continue;
+    const w = Work.editInfo(rec, n, f, l) || {}, where = `${T(f === 'title' ? 'fTitle' : 'fText')} · ${langName(l, rec.book.languageNames)}`;
+    Work.hunks(Work.bookValue(rec, n, f, l), Work.value(rec, n, f, l)).forEach((h, i) => out.push(
+      `<div class="cm chn" id="${chId(f, l, i)}"${hl(w.by)}><div class="cmmeta">${Th('whoChanged', { name: chip(w.by) })}<span>${esc(when(w.at))}</span></div>
+        <div class="cmtop"><span class="cml">${esc(where)}</span></div>
+        ${h.was ? `<div class="chwas" lang="${esc(l)}"><del>${esc(h.was)}</del></div>` : ''}
+        ${h.now ? `<button class="chnow" data-act="show-change" data-k="${esc(chKey(f, l, i))}" lang="${esc(l)}"${hl(w.by)}>${esc(h.now)}</button>` : `<span class="cml">${esc(T('removedW'))}</span>`}
+        <div class="row cmacts"><button class="btn quiet" data-act="undo-chg" data-k="${esc(chKey(f, l, i))}">${esc(T('undo'))}</button></div></div>`));
+  }
+  return out.join('');
+}
+// The pop-up under selected words: one box for a comment or the new words. A title can only be changed.
+function popHtml() {
+  const P = S.pop;
+  if (!P || !S.mine?.rec) return '';
+  const t = P.f === 'title';
+  return `<div class="pop" id="pop" role="dialog" aria-labelledby="poph" style="top:${P.top}px">
+    <div class="flbl" id="poph">${esc(T(t ? 'popTitleT' : 'popTitle'))} · ${esc(langName(P.l, S.mine.rec.book.languageNames))}</div>
+    <div class="cmq" lang="${esc(P.l)}">“${esc(P.quote)}”</div>
+    <label class="flbl" for="draft">${esc(T(t ? 'newWords' : 'draftLbl'))}</label>
+    <textarea id="draft">${esc(P.draft || '')}</textarea>
+    <p class="pophelp">${esc(T(t ? 'popHelpT' : 'popHelp'))}</p>
+    <div class="row popacts"><button class="btn" data-act="pop-cancel">${esc(T('cancel'))}</button><button class="btn" data-act="pop-replace">${esc(T('replace'))}</button>${t ? '' : `<button class="btn primary" data-act="pop-comment">${ICON_CM}${esc(T('comment'))}</button>`}</div></div>`;
 }
 const quoteChip = (c, act) => c.quote
   ? (act ? `<button class="cmq" data-act="show-comment" data-k="${esc(c.id)}" lang="${esc(c.lang)}">“${esc(c.quote)}”</button>` : `<span class="cmq" lang="${esc(c.lang)}">“${esc(c.quote)}”</span>`)
@@ -447,16 +495,8 @@ function storyView(rec) {
   const seg = langs.length > 1 ? `<div class="seg" role="group" aria-label="${esc(T('showLang'))}">${langs.map(l =>
     `<button lang="${esc(l)}" aria-pressed="${l === view}" data-act="view" data-k="${esc(l)}">${esc(langName(l, book.languageNames))}</button>`).join('')}
     <button aria-pressed="${all}" data-act="view" data-k="all">${esc(T('allLangs'))}</button></div>` : '<span></span>';
-  const ro = S.me ? '' : 'readonly data-act="need-name"';
-  const block = l => {
-    const tid = `t-${n}-${l}`, xid = `x-${n}-${l}`, on = Work.isChanged(rec, n, 'title', l) || Work.isChanged(rec, n, 'text', l);
-    return `<div class="langblock">${all ? `<div class="lname" lang="${esc(l)}">${esc(langName(l, book.languageNames))}</div>` : ''}
-      <label class="flbl" for="${tid}">${esc(T('fTitle'))}</label>
-      <input class="titlein" id="${tid}" data-f="title" data-l="${esc(l)}" data-n="${n}" lang="${esc(l)}" autocomplete="off" ${ro} value="${esc(Work.value(rec, n, 'title', l))}">
-      <label class="flbl" for="${xid}">${esc(T('fText'))}</label>
-      <textarea class="textin ${all ? 'short' : ''}" id="${xid}" data-f="text" data-l="${esc(l)}" data-n="${n}" lang="${esc(l)}" ${ro}>${esc(Work.value(rec, n, 'text', l))}</textarea>
-      <div class="chg" id="chg-${esc(l)}" data-on="${on}">${chgHtml(rec, n, l)}</div></div>`;
-  };
+  const block = l => `<div class="langblock" lang="${esc(l)}">${all ? `<div class="lname">${esc(langName(l, book.languageNames))}</div>` : ''}
+      ${markedHtml(rec, n, 'title', l)}<div class="story">${markedHtml(rec, n, 'text', l)}</div></div>`;
   const nav = `<div class="spnav"><span>${n > 1 ? `<button class="btn bigbtn" data-act="scene" data-k="${n - 1}">${esc(T('prevScene', { n: n - 1 }))}</button>` : ''}</span>
     <span>${n < m ? `<button class="btn primary bigbtn" data-act="scene" data-k="${n + 1}">${esc(T('nextScene', { n: n + 1 }))}</button>` : ''}</span></div>`;
   const cms = Work.openComments(rec, n), done = Work.sceneComments(rec, n).filter(c => c.resolved), C = S.compose?.n === n ? S.compose : null;
@@ -482,37 +522,17 @@ function storyView(rec) {
         : S.delC === c.id ? ask(c.id, 'delC')
         : S.editC?.k === c.id || S.reply?.id === c.id ? ''
         : `<div class="row cmacts"><button class="btn quiet" data-act="reply" data-k="${esc(c.id)}">${esc(T('reply'))}</button><button class="btn quiet" data-act="resolve" data-k="${esc(c.id)}">✓ ${esc(T('resolve'))}</button>${ownActs(c.id, c.by)}</div>`}</div>`;
+  const chs = changeNotes(rec, n);
+  const redo = S.redo?.n === n ? `<div class="emptyc undone"><span>${esc(T('undone'))}</span><button class="btn quiet" data-act="redo-chg">${esc(T('putBack'))}</button></div>` : '';
   const list = cms.map(card).join('') + (done.length ? `<button class="btn quiet resbtn" data-act="toggle-resolved" aria-expanded="${S.showResolved}">${S.showResolved ? '▾' : '▸'} ${esc(T('resolvedN', { n: done.length }))}</button>${S.showResolved ? done.map(card).join('') : ''}` : '');
   return `<div class="three">${toc}
     <section class="card scenecard">${mob}
       <div class="scenehead"><span class="lbl">${esc(T('sceneOf', { n, m }))}</span><span class="savest ${S.save === 'fail' ? 'bad' : ''}" id="savest" aria-live="polite">${esc(saveText())}</span></div>
       <div class="row between">${seg}<button class="btn" data-act="comment">${ICON_CM}${esc(T('comment'))}</button></div>
-      ${shown.map(block).join('')}${nav}</section>
-    <aside class="cmside" aria-labelledby="cmh"><h3 class="lbl" id="cmh">${esc(T('commentsOn'))}</h3>${composer}${cms.length || C ? '' : `<div class="emptyc">${esc(T('noComments'))}</div>`}${list}</aside></div>`;
+      <p class="selhint">${ICON_PEN}<span>${esc(T('selHint'))}</span></p>
+      <div id="storytext">${shown.map(block).join('')}</div>${nav}${S.pop?.n === n && shown.includes(S.pop.l) ? popHtml() : ''}</section>
+    <aside class="cmside" aria-labelledby="cmh"><h3 class="lbl" id="cmh">${esc(T('notesOn'))}</h3>${redo}${composer}${cms.length || C || chs ? '' : `<div class="emptyc">${esc(T('noComments'))}</div>`}${chs}${list}</aside></div>`;
 }
-
-// While typing nothing is re-rendered (that would break typing and Chinese input): only the marks around the boxes change.
-function refreshMarks() {
-  const M = S.mine, r = S.route;
-  if (!M?.rec || r.view !== 'book' || M.id !== r.id) return;
-  const rec = M.rec, n = r.n, langs = rec.book.languages, view = viewOf(rec.id, langs);
-  const tl = view === 'all' ? (langs.includes(S.ui) ? S.ui : langs[0]) : view;
-  const st = document.getElementById('stbox');
-  if (st) st.outerHTML = statusBox(rec);
-  const k = Work.counts(rec), sub = document.getElementById('storysub');
-  if (sub) sub.textContent = k.c + k.n ? countText(k) : T('storySub');
-  const ch = Work.sceneChanged(rec, n), title = Work.value(rec, n, 'title', tl);
-  const tm = document.getElementById(`tm-${n}`); if (tm) tm.hidden = !ch;
-  const tt = document.getElementById(`tt-${n}`); if (tt) tt.textContent = title;
-  const op = document.getElementById(`op-${n}`); if (op) op.textContent = `${T('sceneN', { n })} · ${title}${ch ? ' ✎' : ''}`;
-  for (const l of langs) {
-    const box = document.getElementById(`chg-${l}`); if (!box) continue;
-    box.dataset.on = String(Work.isChanged(rec, n, 'title', l) || Work.isChanged(rec, n, 'text', l));
-    box.innerHTML = chgHtml(rec, n, l);
-  }
-}
-let marksTimer;
-const scheduleMarks = () => { clearTimeout(marksTimer); marksTimer = setTimeout(refreshMarks, 150); };
 
 // The reader's identity: asked once per device, changeable (a shared tablet: each person picks their own).
 function saveName() {
@@ -614,6 +634,7 @@ document.addEventListener('click', e => {
   // A tap inside a sheet's card (not on a button) must not close the sheet.
   if (['lang-close', 'sheet-close', 'name-close'].includes(b.dataset.act) && b.classList.contains('sheetbox') && e.target.closest('[data-stop]')) return;
   const a = b.dataset.act, k = b.dataset.k;
+  if (a === 'mark') return markTap(b);
   if (a === 'go') return go(k);
   if (a === 'read') return go(`read/${encodeURIComponent(k)}/0`);
   if (a === 'open-mine') return go(bookHash(k));
@@ -647,7 +668,7 @@ function storyClick(a, k) {
   const needName = () => { if (S.me) return false; openId(); render(); document.querySelector('.symbtn')?.focus(); return true; };
   const findC = k => { const [cid, rid] = String(k).split('/'), c = (rec.comments || []).find(x => x.id === cid); return { c, r: rid ? c?.replies?.find(x => x.id === rid) : null, rid }; };
   const focusId = id2 => { const el = document.getElementById(id2); el?.focus({ preventScroll: true }); el?.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
-  if (a === 'name-open' || a === 'need-name') { if (a === 'need-name' && S.me) return; openId(); render(); return document.querySelector('.symbtn[aria-pressed="true"]')?.focus() ?? document.querySelector('.symbtn')?.focus(); }
+  if (a === 'name-open') { openId(); render(); return document.querySelector('.symbtn[aria-pressed="true"]')?.focus() ?? document.querySelector('.symbtn')?.focus(); }
   if (a === 'name-close') { S.nameSheet = false; S.idDraft = null; return render(); }
   if ((a === 'id-sym' || a === 'id-col') && S.idDraft) {
     S.idDraft[a === 'id-sym' ? 'symbol' : 'colour'] = k; render();
@@ -683,25 +704,49 @@ function storyClick(a, k) {
     return go(bookHash(id, S.route.at || undefined), true);
   }
   if (a === 'tab') return go(k === 'layout' ? `book/${encodeURIComponent(id)}/layout` : bookHash(id), true);
-  if (a === 'scene') return go(bookHash(id, +k), true);
-  if (a === 'view') { S.view[id] = k; S.sel = null; return render(); }
-  if (a === 'undo-lang') {
-    const keepWords = Object.fromEntries(Work.FIELDS.map(f => [f, Work.value(rec, n, f, k)]));
-    const keepInfo = Object.fromEntries(Work.FIELDS.map(f => [f, Work.editInfo(rec, n, f, k)]));
-    Work.undo(rec, n, k); queueSave(); S.redo = { n, lang: k, words: keepWords, info: keepInfo }; return render();
+  if (a === 'scene') { S.pop = null; return go(bookHash(id, +k), true); }
+  if (a === 'view') { S.view[id] = k; S.pop = null; return render(); }
+  // Undo one change (a run of changed words); "Put it back" restores the words as they were before the Undo.
+  if (a === 'undo-chg') {
+    const [f, l, i] = k.split('|'), now = Work.value(rec, n, f, l), info = Work.editInfo(rec, n, f, l);
+    Work.setValue(rec, n, f, l, Work.undoHunk(Work.bookValue(rec, n, f, l), now, +i), info?.by); Work.setEditInfo(rec, n, f, l, info);
+    queueSave(); S.redo = { n, f, l, words: now, info }; return render();
   }
-  if (a === 'redo-lang' && S.redo) {
-    const { words, info } = S.redo;
-    for (const f of Work.FIELDS) { Work.setValue(rec, n, f, k, words[f], myBy()); Work.setEditInfo(rec, n, f, k, info[f]); }
+  if (a === 'redo-chg' && S.redo) {
+    const { f, l, words, info } = S.redo;
+    Work.setValue(rec, n, f, l, words, info?.by); Work.setEditInfo(rec, n, f, l, info);
     queueSave(); return render();
+  }
+  if (a === 'pop-cancel') { S.pop = null; getSelection()?.removeAllRanges(); return render(); }
+  if (a === 'pop-replace' || a === 'pop-comment') {
+    const P = S.pop;
+    if (!P) return;
+    P.draft = document.getElementById('draft')?.value ?? P.draft;
+    if (needName()) return;
+    const words = (P.draft || '').trim();
+    if (a === 'pop-comment') {
+      if (!words) { toast(T('writeFirst')); return document.getElementById('draft')?.focus(); }
+      const c = Work.newComment({ spread: n, lang: P.l, quote: P.quote, position: P.start, text: words, by: myBy() });
+      rec.comments = [...(rec.comments || []), c];
+      S.pop = null; getSelection()?.removeAllRanges(); queueSave(); render();
+      return flash(document.getElementById(`cm-${c.id}`));
+    }
+    Work.replaceRange(rec, n, P.f, P.l, P.start, P.end, words, myBy());
+    S.pop = null; getSelection()?.removeAllRanges(); queueSave(); render();
+    // Show the new words' note (the change that now covers where the words were).
+    const now = Work.value(rec, n, P.f, P.l), hs = Work.isChanged(rec, n, P.f, P.l) ? Work.hunks(Work.bookValue(rec, n, P.f, P.l), now) : [];
+    const i = hs.findIndex(h => h.at <= P.start + words.length && h.at + h.now.length >= P.start);
+    if (i >= 0) flash(document.getElementById(chId(P.f, P.l, i)), true);
+    return;
+  }
+  if (a === 'show-change') {
+    const [f, l, i] = k.split('|');
+    if (!shownLangs(rec).includes(l)) { S.view[id] = l; render(); }
+    return flash(document.querySelector(`#storytext mark[data-e="${chId(f, l, +i)}"]`));
   }
   if (a === 'comment') {
     if (needName()) return;
-    const sel = S.sel, t = sel && sel.n === n && sel.end > sel.start ? Work.value(rec, n, 'text', sel.lang) : '';
-    let start = sel?.start, end = sel?.end;
-    if (t) { while (start < end && /\s/.test(t[start])) start++; while (end > start && /\s/.test(t[end - 1])) end--; }
-    S.compose = t && end > start ? { n, lang: sel.lang, quote: t.slice(start, end), position: start, draft: S.compose?.draft || '' }
-      : { n, draft: S.compose?.draft || '' };
+    S.pop = null; S.compose = { n, draft: S.compose?.draft || '' };
     render();
     const box = document.getElementById('cmtext');
     box?.focus({ preventScroll: true }); box?.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -712,7 +757,7 @@ function storyClick(a, k) {
     const box = document.getElementById('cmtext'), text = (box?.value || '').trim();
     if (!text) return box?.focus();
     rec.comments = [...(rec.comments || []), Work.newComment({ spread: n, ...S.compose, text, by: myBy() })];
-    S.compose = null; S.sel = null; queueSave(); render();
+    S.compose = null; queueSave(); render();
     return document.querySelector('[data-act="comment"]')?.focus();
   }
   if (a === 'del-comment') { S.delC = k; return render(); }
@@ -726,18 +771,64 @@ function storyClick(a, k) {
   if (a === 'show-comment') {
     const c = (rec.comments || []).find(x => x.id === k);
     if (!c) return;
-    const v = viewOf(id, rec.book.languages);
-    if (v !== 'all' && v !== c.lang) { S.view[id] = c.lang; render(); }
-    const ta = document.getElementById(`x-${n}-${c.lang}`);
-    if (!ta) return;
-    const i = Work.findQuote(ta.value, c.quote, c.position);
-    ta.focus({ preventScroll: true });
-    if (i >= 0) ta.setSelectionRange(i, i + c.quote.length);
-    ta.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (!shownLangs(rec).includes(c.lang)) { S.view[id] = c.lang; render(); }
+    flash(document.querySelector(`#storytext mark[data-c="${CSS.escape(c.id)}"]`));
   }
 }
+// Show where something is: scroll to it and light it up for a moment.
+function flash(el, quiet) {
+  if (!el) return;
+  if (!quiet || el.getBoundingClientRect().bottom > innerHeight || el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+  setTimeout(() => el.classList.remove('flash'), 1800);
+}
+const shownLangs = rec => { const v = viewOf(rec.id, rec.book.languages); return v === 'all' ? rec.book.languages : [v]; };
+// Tapping marked words shows their note(s) at the side (on a phone: below).
+function markTap(m) {
+  if (getSelection()?.isCollapsed === false) return;
+  const notes = [m.dataset.c && document.getElementById(`cm-${m.dataset.c}`), m.dataset.e && document.getElementById(m.dataset.e)].filter(Boolean);
+  notes.forEach((el, i) => flash(el, i > 0));
+}
+
+// ---- Selecting words in the story → the pop-up (Comment / Replace) ----
+// Offsets come from each paragraph's data-off, so they point into the reader's own text.
+function onSelect(focus) {
+  const r = S.route;
+  if (r.view !== 'book' || r.tab !== 'story' || !S.mine?.rec || S.composing || S.nameSheet) return;
+  const sel = getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+  const range = sel.getRangeAt(0), box = document.getElementById('storytext');
+  const para = node => (node?.nodeType === 1 ? node : node?.parentElement)?.closest('[data-para]');
+  const pa = para(range.startContainer), pb = para(range.endContainer);
+  if (!pa || !pb || !box?.contains(pa) || !box.contains(pb) || pa.dataset.l !== pb.dataset.l || pa.dataset.f !== pb.dataset.f) return;
+  const rec = S.mine.rec, n = +pa.dataset.n, f = pa.dataset.f, l = pa.dataset.l, text = Work.value(rec, n, f, l);
+  const at = (p, node, off) => { const rr = document.createRange(); rr.selectNodeContents(p); rr.setEnd(node, off); return +p.dataset.off + rr.toString().length; };
+  let start = at(pa, range.startContainer, range.startOffset), end = at(pb, range.endContainer, range.endOffset);
+  while (start < end && /\s/.test(text[start])) start++;
+  while (end > start && /\s/.test(text[end - 1])) end--;
+  if (end <= start) return;
+  const P = S.pop;
+  if (P && P.n === n && P.f === f && P.l === l && P.start === start && P.end === end) { if (focus) focusDraft(); return; }
+  const card = document.querySelector('.scenecard')?.getBoundingClientRect(), rect = range.getBoundingClientRect();
+  if (!card) return;
+  S.pop = { n, f, l, start, end, quote: text.slice(start, end), draft: P?.draft || '', top: Math.round(rect.bottom - card.top + 10) };
+  const old = document.getElementById('pop');
+  if (old) old.outerHTML = popHtml(); else document.querySelector('.scenecard').insertAdjacentHTML('beforeend', popHtml());
+  if (focus) focusDraft();
+}
+function focusDraft() {
+  const d = document.getElementById('draft');
+  d?.focus({ preventScroll: true });
+  document.getElementById('pop')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+// Mouse: at once, typing goes straight into the box. Touch (long-press, handles) and keyboard: after the selection settles,
+// without moving focus, so the selection stays adjustable.
+document.addEventListener('mouseup', e => { if (e.target.closest?.('#storytext')) setTimeout(() => onSelect(true), 0); });
+let selTimer;
+document.addEventListener('selectionchange', () => { clearTimeout(selTimer); selTimer = setTimeout(() => onSelect(false), 450); });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && S.langSheet) { S.langSheet = false; render(); return; }
+  if (e.key === 'Escape' && S.pop && S.route.view === 'book') { S.pop = null; getSelection()?.removeAllRanges(); return render(); }
   if (e.key === 'Escape' && S.compose && S.route.view === 'book') { S.compose = null; render(); return document.querySelector('[data-act="comment"]')?.focus(); }
   if (e.key === 'Escape' && S.sheet) return closeSheet();
   if (e.key === 'Enter' && e.target.id === 'nf') { e.preventDefault(); return createFolder(); }
@@ -752,16 +843,14 @@ document.addEventListener('keydown', e => {
 });
 window.addEventListener('hashchange', onRoute);
 
-// Typing: store the words at once, save after a short pause, refresh the marks; never re-render here.
+// Typing in a comment, reply or pop-up box: keep the draft (a re-render puts it back).
 document.addEventListener('input', e => {
   const el = e.target;
   if (el.id === 'cmtext' && S.compose) { S.compose.draft = el.value; return; }
   if (el.id === 'rptext' && S.reply) { S.reply.draft = el.value; return; }
   if (el.id === 'ced' && S.editC) { S.editC.draft = el.value; return; }
   if (el.id === 'nm' && S.idDraft) { S.idDraft.nick = el.value; return; }
-  if (!el.dataset?.f || S.route.view !== 'book' || !S.mine?.rec || !S.me) return;
-  Work.setValue(S.mine.rec, +el.dataset.n, el.dataset.f, el.dataset.l, el.value, myBy());
-  queueSave(); scheduleMarks();
+  if (el.id === 'draft' && S.pop) { S.pop.draft = el.value; return; }
 });
 document.addEventListener('change', e => {
   if (e.target.id === 'at' && S.mine?.rec) go(bookHash(S.mine.rec.id, +e.target.value), true);
@@ -771,12 +860,6 @@ document.addEventListener('compositionend', () => {
   S.composing = false;
   if (S.renderLater) { S.renderLater = false; render(); }
 });
-// Remember the words selected in a story box, so Comment can quote them after the box loses focus.
-function trackSel() {
-  const el = document.activeElement;
-  if (S.route.view === 'book' && el?.dataset?.f === 'text') S.sel = { n: +el.dataset.n, lang: el.dataset.l, start: el.selectionStart, end: el.selectionEnd };
-}
-['selectionchange', 'select', 'keyup', 'mouseup', 'touchend'].forEach(ev => document.addEventListener(ev, trackSel));
 // Leaving the page (closing the tab, switching app on a phone): save now.
 window.addEventListener('pagehide', flushSave);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSave(); });
