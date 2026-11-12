@@ -7,6 +7,9 @@
     "fingerprint": "sha256:1b3b1089d8003f2a3d98dec187ca2cb7020b80b273630745961523ce73d870e2"
   },
   "saved": "2026-11-06T09:30:00Z",
+  "round": 1,
+  "send": "rewrite",
+  "note": "Make the ending a little calmer.",
   "changes": [
     {
       "spread": 2,
@@ -20,7 +23,7 @@
         "colour": "#F08C2E",
         "nick": "Ana"
       },
-      "at": "2026-11-06T09:10:00Z"
+      "at": "2026-11-06T09:10:30Z"
     },
     {
       "spread": 3,
@@ -29,10 +32,57 @@
       "was": "Mały most",
       "now": "Mostek nad strumykiem",
       "by": {
+        "id": "d40a9c3e-6b12-4f7a-8e55-0a1b2c3d4e5f",
+        "symbol": "🐢",
+        "colour": "#3E7BDB",
+        "nick": "Ola"
+      },
+      "at": "2026-11-06T09:11:00Z"
+    }
+  ],
+  "edits": [
+    {
+      "spread": 2,
+      "lang": "en",
+      "field": "text",
+      "quote": "A hedgehog",
+      "text": "A little hedgehog",
+      "position": 34,
+      "by": {
         "id": "7c1e5a2b-0d4f-4b8e-9a61-3f2c8d7e1a90",
         "symbol": "🦊",
         "colour": "#F08C2E",
         "nick": "Ana"
+      },
+      "at": "2026-11-06T09:10:00Z"
+    },
+    {
+      "spread": 2,
+      "lang": "en",
+      "field": "text",
+      "quote": "sat alone",
+      "text": "sat all alone",
+      "position": 52,
+      "by": {
+        "id": "7c1e5a2b-0d4f-4b8e-9a61-3f2c8d7e1a90",
+        "symbol": "🦊",
+        "colour": "#F08C2E",
+        "nick": "Ana"
+      },
+      "at": "2026-11-06T09:10:30Z"
+    },
+    {
+      "spread": 3,
+      "lang": "pl",
+      "field": "title",
+      "quote": "Mały most",
+      "text": "Mostek nad strumykiem",
+      "position": 0,
+      "by": {
+        "id": "d40a9c3e-6b12-4f7a-8e55-0a1b2c3d4e5f",
+        "symbol": "🐢",
+        "colour": "#3E7BDB",
+        "nick": "Ola"
       },
       "at": "2026-11-06T09:11:00Z"
     }
@@ -50,49 +100,8 @@
         "colour": "#F08C2E",
         "nick": "Ana"
       },
-      "made": "2026-11-06T09:20:00Z",
-      "replies": [
-        {
-          "text": "I think it is fine.",
-          "by": {
-            "id": "d40a9e17-6b3c-4f2a-8e5d-1c7b9a0f2e63",
-            "symbol": "🐢",
-            "colour": "#3E7BDB"
-          },
-          "made": "2026-11-06T09:30:00Z"
-        }
-      ]
-    },
-    {
-      "spread": 2,
-      "lang": "en",
-      "quote": "little hedgehog",
-      "position": 36,
-      "text": "Is she a baby hedgehog?",
-      "by": {
-        "id": "7c1e5a2b-0d4f-4b8e-9a61-3f2c8d7e1a90",
-        "symbol": "🦊",
-        "colour": "#F08C2E",
-        "nick": "Ana"
-      },
-      "made": "2026-11-06T09:21:00Z",
-      "replies": []
-    },
-    {
-      "spread": 4,
-      "text": "Lovely ending.",
-      "by": {
-        "id": "7c1e5a2b-0d4f-4b8e-9a61-3f2c8d7e1a90",
-        "symbol": "🦊",
-        "colour": "#F08C2E",
-        "nick": "Ana"
-      },
-      "made": "2026-11-06T09:22:00Z",
-      "replies": []
+      "made": "2026-11-06T09:14:00Z",
+      "edited": "2026-11-06T09:16:10Z"
     }
-  ],
-  "layout": {
-    "target": "a5-booklet",
-    "settings": {}
-  }
+  ]
 }

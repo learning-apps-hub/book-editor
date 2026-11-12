@@ -191,7 +191,7 @@ header.top { display: flex; align-items: center; gap: 12px; }
 .lname { font-size: 19px; font-weight: 800; color: var(--green-d); }
 .flbl { font-size: 14px; font-weight: 800; color: var(--muted); }
 .btn.quiet { min-height: 44px; padding: 4px 14px; font-size: 15px; background: none; color: var(--green-d); border-color: var(--line); }
-#cmtext:focus, #draft:focus { border-color: var(--green); outline: none; box-shadow: 0 0 0 3px var(--green-l); }
+#rnote:focus, #draft:focus, #ced:focus { border-color: var(--green); outline: none; box-shadow: 0 0 0 3px var(--green-l); }
 /* the story, shown once as page text: changed words in the changer's colour, commented words amber */
 .scenecard { position: relative; }
 #storytext { display: flex; flex-direction: column; gap: 16px; }
@@ -218,7 +218,6 @@ mark.flash { outline-offset: 1px; }
 .chnow { align-self: flex-start; text-align: left; border: 0; border-bottom: 2px solid var(--c, var(--green)); border-radius: 4px; padding: 2px 6px; min-height: 36px;
   font-family: var(--serif); font-size: 17px; color: var(--ink); background: color-mix(in srgb, var(--c, var(--green)) 32%, transparent); overflow-wrap: anywhere; }
 .chn[style] { background: var(--card); border-left: 6px solid var(--c); }
-.undone { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; border-style: solid; }
 .spnav { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .cmside { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .cmside h3 { margin: 0; }
@@ -232,21 +231,30 @@ button.cmq { min-height: 36px; }
 .cm .del-c { align-self: flex-end; color: var(--bad); }
 .delask { justify-content: flex-end; }
 .delask b { flex: 1 1 100%; }
-.composer { background: var(--card); border: 2px solid var(--green); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
-.composer textarea { width: 100%; min-height: 110px; border: 2px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--card); font-size: 17px; }
 .emptyc { border: 2px dashed var(--line); border-radius: 14px; padding: 12px 14px; font-size: 15px; color: var(--muted); }
 .cmmeta { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; font-size: 14px; }
 .cmmeta b { font-size: 15px; }
 .cmmeta > span:not(.flbl) { color: var(--muted); }
 .cmacts { justify-content: flex-end; gap: 6px; }
 .cmacts .cml { flex: 1 1 100%; }
-.rp { border-left: 3px solid var(--line); padding: 2px 0 2px 10px; display: flex; flex-direction: column; gap: 6px; }
-.rp p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.rp textarea, .cm #ced { width: 100%; min-height: 80px; border: 2px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--card); font-size: 16px; }
-.cm.isdone { opacity: .85; background: var(--soft); }
-.resbtn { align-self: flex-start; }
+.cm #ced { width: 100%; min-height: 80px; border: 2px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--card); font-size: 16px; }
 .whoami { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 15px; color: var(--muted); }
 .whoami .btn { min-height: 40px; }
+/* the round (eBook Production's Next round bar): what goes, + Note for this round, Send back / Approve story */
+.rtag { flex: none; align-self: center; padding: 2px 10px; border-radius: 999px; font-size: 14px; font-weight: 800; background: var(--card); border: 1.5px solid var(--line); color: var(--ink); }
+section.nr { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 20px; display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow); }
+.nr-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; justify-content: space-between; }
+.nr-a, .nr-b { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.nr-a .btn.quiet { padding-left: 0; border-color: transparent; }
+.nr-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: 16px; }
+.nr-title b { font-size: 18px; }
+.nr-b .btn { min-height: 52px; }
+#rnote { width: 100%; min-height: 64px; border: 2px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--card); font-size: 17px; }
+section.nr.done { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px 14px; background: var(--green-l); border-color: var(--green); }
+.nr.done .tick { width: 36px; height: 36px; border-radius: 50%; background: var(--green); color: var(--bg); display: grid; place-items: center; font-weight: 900; font-size: 20px; flex: none; }
+.nr-t { flex: 1 1 260px; display: flex; flex-direction: column; gap: 2px; }
+.nr-t b { font-size: 17px; }
+.nr-t .muted { font-size: 15px; }
 /* the reader's identity: avatar = picture on their colour (+ nickname); the colour is also their highlighter */
 .who { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; font-weight: 800; color: var(--ink); }
 .who b { font-size: 15px; overflow-wrap: anywhere; }
@@ -256,9 +264,6 @@ button.cmq { min-height: 36px; }
 .av.empty { background: var(--soft); color: var(--muted); border: 2px dashed var(--line); box-shadow: none; font-family: var(--sans); }
 .cmmeta { align-items: center; }
 .cm[style] { border-left: 6px solid var(--c); background: color-mix(in srgb, var(--c) 10%, var(--card)); }
-.cm.isdone[style] { background: color-mix(in srgb, var(--c) 6%, var(--soft)); }
-.rp[style] { border-left-color: var(--c); background: color-mix(in srgb, var(--c) 9%, transparent); border-radius: 0 8px 8px 0; padding-right: 6px; }
-.composer[style] { border-color: var(--c); }
 .sheetbox { overflow-y: auto; }
 .sheetbox.idbox { padding-top: max(12px, env(safe-area-inset-top, 0px)); }
 .idcard { gap: 8px; }
@@ -302,7 +307,9 @@ button.cmq { min-height: 36px; }
   .step b { font-size: 18px; }
   .seg { display: flex; width: 100%; }
   .seg button { flex: 1 1 auto; padding-inline: 10px; }
-  .row.between > .btn { width: 100%; }
+  .nr-b { width: 100%; }
+  .nr-b .btn { flex: 1 1 auto; }
+  section.nr { padding: 12px 14px; }
   .spnav .btn { padding-inline: 14px; font-size: 17px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

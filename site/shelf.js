@@ -3,7 +3,7 @@
 //
 // Stores (database "book-editor", version 1):
 //   books  keyPath id      { id, bookVersion, fingerprint, titles, languages, book, story, folder, added, opened,
-//                            edits, editBy, comments, changed }   (see work.js)
+//                            edits, comments, note, sent, changed }   (see work.js)
 //   files  key [id, path]  Blob (pictures, as listed in book.json "pictures")
 //   meta   key 'folders'   [folder names, in the order they were made]
 
@@ -112,17 +112,20 @@ export async function markOpened(id) {
 }
 
 /**
- * Save the reader's edits and comments onto the book record (see work.js).
+ * Save the reader's edits, comments, round note and sent state onto the book record (see work.js).
  * Saves run one after another, so an older save can never land after a newer one.
  */
 let saving = Promise.resolve();
-export function saveWork(id, edits, comments, editBy = {}) {
+export function saveWork(id, work) {
   const run = async () => {
     const d = await db(), tx = d.transaction('books', 'readwrite'), s = tx.objectStore('books');
     const rec = await asPromise(s.get(id));
     if (!rec) throw Object.assign(new Error('book gone'), { name: 'NotFoundError' });
     const changed = new Date().toISOString();
-    Object.assign(rec, { edits, editBy, comments, changed });
+    const { edits, comments, note, sent } = work;
+    Object.assign(rec, { edits, comments, note, sent, changed });
+    delete rec.editBy;                       // the old field-level "who changed it" (work.js migrate)
+    if (!sent) delete rec.sent;
     s.put(rec);
     await finished(tx);
     return changed;
