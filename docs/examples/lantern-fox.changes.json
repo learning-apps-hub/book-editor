@@ -1,0 +1,98 @@
+{
+  "format": "book-editor-changes",
+  "formatVersion": 1,
+  "book": {
+    "id": "lantern-fox",
+    "bookVersion": 1,
+    "fingerprint": "sha256:1b3b1089d8003f2a3d98dec187ca2cb7020b80b273630745961523ce73d870e2"
+  },
+  "saved": "2026-11-06T09:30:00Z",
+  "changes": [
+    {
+      "spread": 2,
+      "lang": "en",
+      "field": "text",
+      "was": "One night Pip heard a tiny sniff. A hedgehog sat alone under a fern.\n\n“I can't find my way home,” she whispered.",
+      "now": "One night Pip heard a tiny sniff. A little hedgehog sat all alone under a fern.\n\n“I can't find my way home,” she whispered.",
+      "by": {
+        "id": "7c1e5a2b-0d4f-4b8e-9a61-3f2c8d7e1a90",
+        "symbol": "🦊",
+        "colour": "#F08C2E",
+        "nick": "Ana"
+      },
+      "at": "2026-11-06T09:10:00Z"
+    },
+    {
+      "spread": 3,
+      "lang": "pl",
+      "field": "title",
+      "was": "Mały most",
+      "now": "Mostek nad strumykiem",
+      "by": {
+        "id": "7c1e5a2b-0d4f-4b8e-9a61-3f2c8d7e1a90",
+        "symbol": "🦊",
+        "colour": "#F08C2E",
+        "nick": "Ana"
+      },
+      "at": "2026-11-06T09:11:00Z"
+    }
+  ],
+  "comments": [
+    {
+      "spread": 1,
+      "lang": "zh",
+      "quote": "纸灯笼",
+      "position": 41,
+      "text": "Maybe say 红灯笼?",
+      "by": {
+        "id": "7c1e5a2b-0d4f-4b8e-9a61-3f2c8d7e1a90",
+        "symbol": "🦊",
+        "colour": "#F08C2E",
+        "nick": "Ana"
+      },
+      "made": "2026-11-06T09:20:00Z",
+      "replies": [
+        {
+          "text": "I think it is fine.",
+          "by": {
+            "id": "d40a9e17-6b3c-4f2a-8e5d-1c7b9a0f2e63",
+            "symbol": "🐢",
+            "colour": "#3E7BDB"
+          },
+          "made": "2026-11-06T09:30:00Z"
+        }
+      ]
+    },
+    {
+      "spread": 2,
+      "lang": "en",
+      "quote": "little hedgehog",
+      "position": 36,
+      "text": "Is she a baby hedgehog?",
+      "by": {
+        "id": "7c1e5a2b-0d4f-4b8e-9a61-3f2c8d7e1a90",
+        "symbol": "🦊",
+        "colour": "#F08C2E",
+        "nick": "Ana"
+      },
+      "made": "2026-11-06T09:21:00Z",
+      "replies": []
+    },
+    {
+      "spread": 4,
+      "text": "Lovely ending.",
+      "by": {
+        "id": "7c1e5a2b-0d4f-4b8e-9a61-3f2c8d7e1a90",
+        "symbol": "🦊",
+        "colour": "#F08C2E",
+        "nick": "Ana"
+      },
+      "made": "2026-11-06T09:22:00Z",
+      "replies": []
+    }
+  ],
+  "layout": {
+    "target": "a5-booklet",
+    "settings": {}
+  }
+}

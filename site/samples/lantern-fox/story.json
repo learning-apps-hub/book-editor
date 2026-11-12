@@ -1,0 +1,62 @@
+[
+  {
+    "number": 1,
+    "title": {
+      "en": "The Dark Wood",
+      "zh": "黑黑的树林",
+      "pl": "Ciemny las",
+      "fr": "Le Bois sombre"
+    },
+    "text": {
+      "en": "Once upon a time, at the edge of a dark wood, lived a small fox called Pip.\n\nEvery evening Pip lit a paper lantern and carried it between the trees.",
+      "zh": "从前，在一片黑黑的树林边上，住着一只叫皮普的小狐狸。\n\n每天傍晚，皮普都会点亮一盏纸灯笼，提着它在树林里走。",
+      "pl": "Dawno temu, na skraju ciemnego lasu, mieszkał mały lisek o imieniu Pip.\n\nKażdego wieczoru Pip zapalał papierową latarenkę i niósł ją między drzewami.",
+      "fr": "Il était une fois, à l'orée d'un bois sombre, un petit renard nommé Pip.\n\nChaque soir, Pip allumait une lanterne en papier et la portait entre les arbres."
+    }
+  },
+  {
+    "number": 2,
+    "title": {
+      "en": "The Lost Hedgehog",
+      "zh": "迷路的小刺猬",
+      "pl": "Zagubiony jeżyk",
+      "fr": "Le Hérisson perdu"
+    },
+    "text": {
+      "en": "One night Pip heard a tiny sniff. A hedgehog sat alone under a fern.\n\n“I can't find my way home,” she whispered.",
+      "zh": "一天晚上，皮普听见一声小小的抽泣。一只小刺猬独自坐在蕨叶下面。\n\n“我找不到回家的路了。”她小声说。",
+      "pl": "Pewnej nocy Pip usłyszał ciche pochlipywanie. Pod paprocią siedział samotny jeżyk.\n\n„Nie mogę znaleźć drogi do domu” – szepnęła.",
+      "fr": "Une nuit, Pip entendit un petit reniflement. Une hérissonne était assise seule sous une fougère.\n\n« Je ne retrouve plus le chemin de ma maison », murmura-t-elle."
+    }
+  },
+  {
+    "number": 3,
+    "title": {
+      "en": "The Little Bridge",
+      "zh": "小木桥",
+      "pl": "Mały most",
+      "fr": "Le Petit Pont"
+    },
+    "text": {
+      "en": "Pip held the lantern high. Together they crossed the little bridge over the stream.\n\nThe water sang, and the light danced on the stones.",
+      "zh": "皮普把灯笼举得高高的。他们一起走过小溪上的小木桥。\n\n溪水在唱歌，灯光在石头上跳舞。",
+      "pl": "Pip uniósł latarenkę wysoko. Razem przeszli przez mały most nad strumykiem.\n\nWoda śpiewała, a światło tańczyło na kamieniach.",
+      "fr": "Pip leva haut sa lanterne. Ensemble, ils traversèrent le petit pont sur le ruisseau.\n\nL'eau chantait et la lumière dansait sur les pierres."
+    }
+  },
+  {
+    "number": 4,
+    "title": {
+      "en": "Home at Last",
+      "zh": "终于到家了",
+      "pl": "Nareszcie w domu",
+      "fr": "Enfin à la maison"
+    },
+    "text": {
+      "en": "At the top of the hill a round door glowed. “Home!” cried the hedgehog.\n\nPip walked back through the wood, and the dark did not seem so dark any more.",
+      "zh": "山顶上，一扇圆圆的门亮着光。“到家了！”小刺猬叫道。\n\n皮普穿过树林走回家，黑夜好像不再那么黑了。",
+      "pl": "Na szczycie wzgórza świeciły okrągłe drzwi. „Dom!” – zawołał jeżyk.\n\nPip wrócił przez las, a ciemność nie wydawała się już taka ciemna.",
+      "fr": "En haut de la colline brillait une porte ronde. « Ma maison ! » s'écria la hérissonne.\n\nPip rentra à travers le bois, et la nuit ne lui sembla plus si noire."
+    }
+  }
+]
