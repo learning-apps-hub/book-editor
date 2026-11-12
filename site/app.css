@@ -230,6 +230,33 @@ button.cmq { min-height: 36px; }
 .resbtn { align-self: flex-start; }
 .whoami { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 15px; color: var(--muted); }
 .whoami .btn { min-height: 40px; }
+/* the reader's identity: avatar = picture on their colour (+ nickname); the colour is also their highlighter */
+.who { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; font-weight: 800; color: var(--ink); }
+.who b { font-size: 15px; overflow-wrap: anywhere; }
+.av { width: 30px; height: 30px; flex: none; border-radius: 50%; display: inline-grid; place-items: center; font-size: 17px; line-height: 1;
+  background: var(--c, var(--soft)); box-shadow: 0 0 0 2px var(--card); font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; }
+.av.plain { background: var(--soft); color: var(--muted); font-family: var(--sans); font-size: 15px; font-weight: 800; }
+.av.empty { background: var(--soft); color: var(--muted); border: 2px dashed var(--line); box-shadow: none; font-family: var(--sans); }
+.cmmeta { align-items: center; }
+.tcf[style] .diff ins { color: var(--ink); background: color-mix(in srgb, var(--c) 32%, transparent); text-decoration-color: var(--c); }
+.cm[style] { border-left: 6px solid var(--c); background: color-mix(in srgb, var(--c) 10%, var(--card)); }
+.cm.isdone[style] { background: color-mix(in srgb, var(--c) 6%, var(--soft)); }
+.rp[style] { border-left-color: var(--c); background: color-mix(in srgb, var(--c) 9%, transparent); border-radius: 0 8px 8px 0; padding-right: 6px; }
+.composer[style] { border-color: var(--c); }
+.sheetbox { overflow-y: auto; }
+.sheetbox.idbox { padding-top: max(12px, env(safe-area-inset-top, 0px)); }
+.idcard { gap: 8px; }
+.idprev .av { width: 44px; height: 44px; font-size: 26px; }
+.symgrid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.symbtn { min-height: 50px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); font-size: 26px; line-height: 1; padding: 0;
+  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; }
+.symbtn[aria-pressed="true"] { border: 3px solid var(--ink); background: color-mix(in srgb, var(--c, var(--green)) 45%, var(--card)); }
+.colgrid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.colbtn { min-height: 44px; border-radius: 12px; border: 2px solid var(--card); background: var(--c); box-shadow: 0 0 0 1px var(--line); padding: 0; position: relative; }
+.colbtn[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--ink); }
+.colbtn[aria-pressed="true"]::after { content: '✓'; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 22px; font-weight: 900; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+.nickin { width: 100%; min-height: 52px; border: 2px solid var(--line); border-radius: 12px; padding: 6px 12px; background: var(--card); font-size: 18px; }
+.nickin:focus { border-color: var(--green); outline: none; box-shadow: 0 0 0 3px var(--green-l); }
 @media (max-width: 1000px) {
   .three { grid-template-columns: minmax(0, 1fr); }
   .toc { display: none; }

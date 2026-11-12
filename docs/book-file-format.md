@@ -116,9 +116,9 @@ sample book to prove both agree.
 ## 2. The changes file: `<Title>.changes.json`
 
 What a reader sends back. One file per book (sending back several books makes several
-files). No pictures, a few KB. It carries the name the reader typed into Book Editor
-(stored only on their device) on each change, comment and reply, like track changes and
-comments in a word processor.
+files). No pictures, a few KB. Each change, comment and reply carries who made it, like
+track changes and comments in a word processor: the reader's **identity** chosen in Book
+Editor (a picture, a colour and an optional nickname, stored only on their device).
 
 ```json
 {
@@ -128,15 +128,15 @@ comments in a word processor.
   "saved": "2026-11-06T09:30:00Z",
   "changes": [
     { "spread": 2, "lang": "en", "field": "text",  "was": "…old words…", "now": "…new words…",
-      "by": "Ana", "at": "2026-11-06T09:12:40Z" },
-    { "spread": 3, "lang": "pl", "field": "title", "was": "Most", "now": "Mostek", "by": "Ola", "at": "2026-11-06T09:20:02Z" }
+      "by": { "id": "7c1e…", "symbol": "🦊", "colour": "#F08C2E", "nick": "Ana" }, "at": "2026-11-06T09:12:40Z" },
+    { "spread": 3, "lang": "pl", "field": "title", "was": "Most", "now": "Mostek", "by": { "id": "d40a…", "symbol": "🐢", "colour": "#3E7BDB" }, "at": "2026-11-06T09:20:02Z" }
   ],
   "comments": [
     { "spread": 1, "lang": "en", "quote": "dark wood", "position": 31, "text": "Too scary for little ones?",
-      "by": "Ana", "made": "2026-11-06T09:14:00Z",
-      "replies": [ { "text": "I think it is fine.", "by": "Ola", "made": "2026-11-06T09:21:30Z" } ] },
-    { "spread": 4, "text": "Lovely ending.", "by": "Ana", "made": "2026-11-06T09:25:00Z", "edited": "2026-11-06T09:26:10Z",
-      "resolved": { "by": "Ola", "at": "2026-11-06T09:28:00Z" }, "replies": [] }
+      "by": { "id": "7c1e…", "symbol": "🦊", "colour": "#F08C2E", "nick": "Ana" }, "made": "2026-11-06T09:14:00Z",
+      "replies": [ { "text": "I think it is fine.", "by": { "id": "d40a…", "symbol": "🐢", "colour": "#3E7BDB" }, "made": "2026-11-06T09:21:30Z" } ] },
+    { "spread": 4, "text": "Lovely ending.", "by": { "id": "7c1e…", "symbol": "🦊", "colour": "#F08C2E", "nick": "Ana" }, "made": "2026-11-06T09:25:00Z", "edited": "2026-11-06T09:26:10Z",
+      "resolved": { "by": { "id": "d40a…", "symbol": "🐢", "colour": "#3E7BDB" }, "at": "2026-11-06T09:28:00Z" }, "replies": [] }
   ],
   "layout": { "target": "a5-booklet", "settings": { } }
 }
@@ -148,7 +148,8 @@ comments in a word processor.
 | `book` | copied from the book's `book.json`: `id`, `bookVersion`, `fingerprint`. The author app uses the fingerprint to see whether its words moved on since the export. |
 | `saved` | UTC time the file was made. |
 | `changes` | at most one entry per scene + language + field. `field` is `"title"` or `"text"`. `was` = the words in the book file, `now` = the reader's words. Whole field, not a diff. A field the reader changed and then changed back is left out. |
-| `changes[].by`, `changes[].at` | who last changed that field (the name typed in Book Editor) and when (UTC). Optional: older files and an empty name leave them out or `""`. |
+| `by` (on changes, comments, replies, `resolved`) | who: `{ id, symbol, colour, nick? }`. `symbol` = one of Book Editor's 20 pictures (an emoji), `colour` = one of its 10 colours (`#RRGGBB`), `nick` = optional nickname (≤ 30 characters), `id` = a random id made on the reader's device (not personal), the same on everything one reader made, so the author app can group them. Files made before 2026-11-12 carry a plain typed name (a string) instead; a reader of the file must accept both, and `""` or a missing `by`. |
+| `changes[].at` | when that field was last changed (UTC). |
 | `comments[].by`, `made`, `edited` | the comment's author, when it was made, and when its words were last edited (absent if never). |
 | `comments[].replies` | the thread under a comment, oldest first: `{ text, by, made, edited? }`. May be empty. |
 | `comments[].resolved` | present when someone marked the comment resolved: `{ by, at }`. Resolved comments are still sent so the author sees them. |
@@ -160,7 +161,8 @@ is the source of truth; `position` only tells repeated quotes apart. If they dis
 the author app looks for `quote` nearest to `position`.
 
 `by`, `at`, `made`, `edited`, `replies` and `resolved` were added on 2026-11-11 as optional
-fields; `formatVersion` stays 1 and a reader of the file must accept them missing.
+fields; `formatVersion` stays 1 and a reader of the file must accept them missing. On
+2026-11-12 `by` became the identity object above (a string is still valid).
 
 Lists may be empty. A changes file with nothing in `changes` or `comments` is not sent.
 

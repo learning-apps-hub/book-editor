@@ -1,10 +1,12 @@
 // Book Editor — app shell: display language, My shelf / Library tabs, read-only reader (step 3);
 // My shelf in this browser's storage, Select → Move to / Delete (step 4);
-// a shelf book's Story: scene list, words edited in place, comments, autosave (step 5).
+// a shelf book's Story: scene list, words edited in place, comments, autosave (step 5);
+// the reader's identity: picture + colour + optional nickname, also their highlighter (identity.js).
 // File formats: docs/book-file-format.md. No build step; plain ES modules.
 import { UI, langName } from './i18n.js';
 import * as Shelf from './shelf.js';
 import * as Work from './work.js';
+import * as Id from './identity.js';
 
 // ---- Library location ----
 // The real Library sits at the app's own address under library/ (behind Cloudflare Access).
@@ -43,12 +45,14 @@ const S = {
   delC: null, redo: null,                                      // comment id asking "Delete?" / words to put back after Undo
   dirty: false, save: '', saveFailed: false,                   // save: '' | 'saving' | 'saved' | 'fail'
   composing: false, renderLater: false, fromBook: false,
-  name: '', nameSheet: false,                                  // the reader's name, shown to the author on changes + comments
+  me: null, nameSheet: false, idDraft: null,                  // the reader's identity (identity.js) / the sheet choosing it
   reply: null, editC: null, showResolved: false,               // { id, draft } / { k: id or id/replyId, draft }
 };
-S.name = store.get('be.name') || '';
+S.me = Id.load(store);
+const OLD_NAME = store.get('be.name') || '';                   // a name typed before identities (2026-11-11)
 const T = (k, v = {}) => String(UI[S.ui][k] ?? UI.en[k] ?? k).replace(/\{(\w+)\}/g, (_, x) => v[x]);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const Th = (k, v = {}) => esc(String(UI[S.ui][k] ?? UI.en[k] ?? k)).replace(/\{(\w+)\}/g, (_, x) => v[x]);   // values are HTML
 const titleOf = (titles, langs, prefer) => titles?.[prefer] || titles?.[langs?.[0]] || Object.values(titles || {})[0] || '';
 
 // ---- Loading ----
@@ -180,7 +184,7 @@ function onRoute() {
   }
   if (r.view !== 'mine') S.fromBook = false;
   if (r.view === 'book' && r.tab === 'story') S.scene[r.id] = r.n;
-  if (r.view === 'book' && !S.name) S.nameSheet = true;
+  if (r.view === 'book' && !S.me && !S.nameSheet) openId();
   if (r.view !== 'book') S.nameSheet = false;
   if (r.view === 'read' && S.lib) loadBook(r.id);
   if (r.view === 'mine' || r.view === 'book') loadMine(r.id); else closeMine();
@@ -355,15 +359,37 @@ function statusBox(rec) {
     ? `<div class="status todo" id="stbox"><b>${esc(T('notSent'))}</b><span>${esc(countText(k))} · ${esc(T('keptHere'))}</span>${whoAmI()}</div>`
     : `<div class="status ok" id="stbox"><b>${esc(T('noChg'))}</b><span>${esc(T('noChgT'))}</span>${whoAmI()}</div>`;
 }
-const whoAmI = () => S.name ? `<span class="whoami">${esc(T('you', { name: S.name }))}<button class="btn quiet" data-act="name-open">${esc(T('changeName'))}</button></span>` : '';
+const whoAmI = () => S.me ? `<span class="whoami">${Th('you', { name: chip(S.me) })}<button class="btn quiet" data-act="name-open">${esc(T('changeName'))}</button></span>` : '';
 const when = iso => { try { return new Intl.DateTimeFormat(S.ui, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso)); } catch { return ''; } };
-const byLine = (by, at, edited) => `<b>${esc(by || T('someone'))}</b><span>${esc(when(at))}${edited ? ` · ${esc(T('editedT'))}` : ''}</span>`;
+// Who: an avatar (picture on the person's colour) + nickname if any. Older data: a typed name.
+const colourOf = by => { const w = Id.resolve(by, S.me); return w && typeof w === 'object' && Id.COLOURS.includes(w.colour) ? w.colour : ''; };
+const hl = by => colourOf(by) ? ` style="--c:${colourOf(by)}"` : '';
+function chip(by) {
+  const w = Id.resolve(by, S.me);
+  if (!w) return `<b class="who">${esc(T('someone'))}</b>`;
+  if (typeof w === 'string') return `<span class="who"><span class="av plain" aria-hidden="true">${esc([...w][0].toLocaleUpperCase())}</span><b>${esc(w)}</b></span>`;
+  const c = Id.COLOURS.includes(w.colour) ? w.colour : '#8B8D98', sym = Id.SYMBOLS.includes(w.symbol) ? w.symbol : '?';
+  return `<span class="who" style="--c:${c}"><span class="av" role="img" aria-label="${esc(w.nick || T('aReader'))}">${sym}</span>${w.nick ? `<b>${esc(w.nick)}</b>` : ''}</span>`;
+}
+const byLine = (by, at, edited) => `${chip(by)}<span>${esc(when(at))}${edited ? ` · ${esc(T('editedT'))}` : ''}</span>`;
+function openId() {
+  S.idDraft = S.me ? { ...S.me } : { symbol: '', colour: '', nick: OLD_NAME.slice(0, Id.NICK_MAX) };
+  S.nameSheet = true;
+}
 function nameSheet() {
-  if (!S.nameSheet) return '';
-  return `<div class="sheetbox" data-act="name-close"><section class="card" role="dialog" aria-modal="true" aria-labelledby="nh" data-stop="1">
-    <h2 id="nh">${esc(T('nameTitle'))}</h2><p>${esc(T('nameHelp'))}</p>
-    <div class="newf"><input id="nm" maxlength="40" autocomplete="name" value="${esc(S.name)}" placeholder="${esc(T('nameTitle'))}" aria-label="${esc(T('nameTitle'))}">
-      <button class="btn primary" data-act="name-save">${esc(T('save'))}</button></div></section></div>`;
+  if (!S.nameSheet || !S.idDraft) return '';
+  const D = S.idDraft, ok = Id.SYMBOLS.includes(D.symbol) && Id.COLOURS.includes(D.colour), names = T('colourNames').split('|');
+  const prev = ok ? chip({ ...D, nick: D.nick?.trim() }) : `<span class="who"><span class="av empty" aria-hidden="true">?</span></span>`;
+  return `<div class="sheetbox idbox" data-act="name-close"><section class="card idcard" role="dialog" aria-modal="true" aria-labelledby="nh" data-stop="1">
+    <div class="sheethead"><h2 id="nh">${esc(T('idTitle'))}</h2><span class="idprev"${D.colour ? ` style="--c:${D.colour}"` : ''}>${prev}</span></div>
+    <p>${esc(T('idHelp'))}</p>
+    <div class="flbl" id="idp">${esc(T('idPic'))}</div>
+    <div class="symgrid" role="group" aria-labelledby="idp">${Id.SYMBOLS.map(x => `<button class="symbtn" data-act="id-sym" data-k="${x}" aria-pressed="${x === D.symbol}"${D.colour ? ` style="--c:${D.colour}"` : ''}>${x}</button>`).join('')}</div>
+    <div class="flbl" id="idc">${esc(T('idColour'))}</div>
+    <div class="colgrid" role="group" aria-labelledby="idc">${Id.COLOURS.map((c, i) => `<button class="colbtn" data-act="id-col" data-k="${c}" style="--c:${c}" aria-pressed="${c === D.colour}" aria-label="${esc(names[i] || c)}"></button>`).join('')}</div>
+    <label class="flbl" for="nm">${esc(T('idNick'))}</label>
+    <input id="nm" class="nickin" maxlength="${Id.NICK_MAX}" autocomplete="nickname" value="${esc(D.nick || '')}">
+    <div class="sheetacts"><button class="btn bigbtn" data-act="name-close">${esc(T(S.me ? 'cancel' : 'later'))}</button><button class="btn primary bigbtn" data-act="name-save" ${ok ? '' : 'disabled'}>${esc(T('save'))}</button></div></section></div>`;
 }
 const saveText = () => S.save === 'saving' ? T('saving') : S.save === 'saved' ? T('saved') : S.save === 'fail' ? T('notSaved') : '';
 const viewOf = (id, langs) => {
@@ -394,7 +420,7 @@ function chgHtml(rec, n, l) {
   if (fields.length) {
     return `<div class="tc"><div class="tchead"><span class="edited">✎ ${esc(T('changed'))}</span><button class="btn quiet" data-act="undo-lang" data-k="${esc(l)}">${esc(T('undoHere'))}</button></div>
       ${fields.map(f => { const w = Work.editInfo(rec, n, f, l) || {};
-        return `<div class="tcf"><div class="cmmeta"><span class="flbl">${esc(T(f === 'title' ? 'fTitle' : 'fText'))}</span>${byLine(w.by, w.at)}</div>
+        return `<div class="tcf"${hl(w.by)}><div class="cmmeta"><span class="flbl">${esc(T(f === 'title' ? 'fTitle' : 'fText'))}</span>${byLine(w.by, w.at)}</div>
           <div class="diff ${f}" lang="${esc(l)}">${diffHtml(Work.bookValue(rec, n, f, l), Work.value(rec, n, f, l))}</div></div>`; }).join('')}</div>`;
   }
   if (S.redo && S.redo.n === n && S.redo.lang === l) return `<button class="btn quiet" data-act="redo-lang" data-k="${esc(l)}">${esc(T('redoHere'))}</button>`;
@@ -421,7 +447,7 @@ function storyView(rec) {
   const seg = langs.length > 1 ? `<div class="seg" role="group" aria-label="${esc(T('showLang'))}">${langs.map(l =>
     `<button lang="${esc(l)}" aria-pressed="${l === view}" data-act="view" data-k="${esc(l)}">${esc(langName(l, book.languageNames))}</button>`).join('')}
     <button aria-pressed="${all}" data-act="view" data-k="all">${esc(T('allLangs'))}</button></div>` : '<span></span>';
-  const ro = S.name ? '' : 'readonly data-act="need-name"';
+  const ro = S.me ? '' : 'readonly data-act="need-name"';
   const block = l => {
     const tid = `t-${n}-${l}`, xid = `x-${n}-${l}`, on = Work.isChanged(rec, n, 'title', l) || Work.isChanged(rec, n, 'text', l);
     return `<div class="langblock">${all ? `<div class="lname" lang="${esc(l)}">${esc(langName(l, book.languageNames))}</div>` : ''}
@@ -434,25 +460,25 @@ function storyView(rec) {
   const nav = `<div class="spnav"><span>${n > 1 ? `<button class="btn bigbtn" data-act="scene" data-k="${n - 1}">${esc(T('prevScene', { n: n - 1 }))}</button>` : ''}</span>
     <span>${n < m ? `<button class="btn primary bigbtn" data-act="scene" data-k="${n + 1}">${esc(T('nextScene', { n: n + 1 }))}</button>` : ''}</span></div>`;
   const cms = Work.openComments(rec, n), done = Work.sceneComments(rec, n).filter(c => c.resolved), C = S.compose?.n === n ? S.compose : null;
-  const composer = C ? `<div class="composer">${quoteChip(C)}<label class="flbl" for="cmtext">${esc(T('yourComment'))}</label>
+  const composer = C ? `<div class="composer"${hl(S.me)}>${quoteChip(C)}<label class="flbl" for="cmtext">${esc(T('yourComment'))}</label>
       <textarea id="cmtext">${esc(C.draft || '')}</textarea>
       <div class="row"><button class="btn primary" data-act="save-comment">${esc(T('save'))}</button><button class="btn" data-act="cancel-comment">${esc(T('cancel'))}</button></div></div>` : '';
-  const own = by => !!by && by === S.name;
+  const own = by => Id.isOwn(by, S.me, OLD_NAME);
   const editBox = k => `<label class="flbl" for="ced">${esc(T('edit'))}</label><textarea id="ced">${esc(S.editC.draft)}</textarea>
     <div class="row"><button class="btn primary" data-act="edit-save">${esc(T('save'))}</button><button class="btn" data-act="edit-cancel">${esc(T('cancel'))}</button></div>`;
   const ask = (k, q) => `<div class="row delask"><b>${esc(T(q))}</b><button class="btn danger-solid" data-act="del-c-yes" data-k="${esc(k)}">${esc(T('del'))}</button><button class="btn" data-act="del-c-no">${esc(T('keepIt'))}</button></div>`;
   const ownActs = (k, by) => own(by) ? `<button class="btn quiet" data-act="edit-c" data-k="${esc(k)}">${esc(T('edit'))}</button><button class="btn quiet del-c" data-act="del-comment" data-k="${esc(k)}">${esc(T('del'))}</button>` : '';
   const reply = (c, r) => { const k = `${c.id}/${r.id}`;
-    return `<div class="rp"><div class="cmmeta">${byLine(r.by, r.made, r.edited)}</div>
+    return `<div class="rp"${hl(r.by)}><div class="cmmeta">${byLine(r.by, r.made, r.edited)}</div>
       ${S.editC?.k === k ? editBox(k) : `<p>${esc(r.text)}</p>`}
       ${S.delC === k ? ask(k, 'delR') : S.editC?.k === k || c.resolved ? '' : `<div class="row cmacts">${ownActs(k, r.by)}</div>`}</div>`; };
-  const card = c => `<div class="cm ${c.resolved ? 'isdone' : ''}" id="cm-${esc(c.id)}"><div class="cmmeta">${byLine(c.by, c.made, c.edited)}</div>
+  const card = c => `<div class="cm ${c.resolved ? 'isdone' : ''}" id="cm-${esc(c.id)}"${hl(c.by)}><div class="cmmeta">${byLine(c.by, c.made, c.edited)}</div>
       <div class="cmtop">${quoteChip(c, !c.resolved)}${c.quote ? `<span class="cml">${esc(langName(c.lang, book.languageNames))}</span>` : ''}</div>
       ${S.editC?.k === c.id ? editBox(c.id) : `<p>${esc(c.text)}</p>`}
       ${(c.replies || []).map(r => reply(c, r)).join('')}
       ${S.reply?.id === c.id ? `<div class="rp"><label class="flbl" for="rptext">${esc(T('yourReply'))}</label><textarea id="rptext">${esc(S.reply.draft || '')}</textarea>
         <div class="row"><button class="btn primary" data-act="reply-save">${esc(T('reply'))}</button><button class="btn" data-act="reply-cancel">${esc(T('cancel'))}</button></div></div>` : ''}
-      ${c.resolved ? `<div class="row cmacts"><span class="cml">${esc(T('resolvedBy', { name: c.resolved.by || T('someone'), t: when(c.resolved.at) }))}</span><button class="btn quiet" data-act="reopen" data-k="${esc(c.id)}">${esc(T('reopen'))}</button></div>`
+      ${c.resolved ? `<div class="row cmacts"><span class="cml">${Th('resolvedBy', { name: chip(c.resolved.by), t: esc(when(c.resolved.at)) })}</span><button class="btn quiet" data-act="reopen" data-k="${esc(c.id)}">${esc(T('reopen'))}</button></div>`
         : S.delC === c.id ? ask(c.id, 'delC')
         : S.editC?.k === c.id || S.reply?.id === c.id ? ''
         : `<div class="row cmacts"><button class="btn quiet" data-act="reply" data-k="${esc(c.id)}">${esc(T('reply'))}</button><button class="btn quiet" data-act="resolve" data-k="${esc(c.id)}">✓ ${esc(T('resolve'))}</button>${ownActs(c.id, c.by)}</div>`}</div>`;
@@ -488,12 +514,14 @@ function refreshMarks() {
 let marksTimer;
 const scheduleMarks = () => { clearTimeout(marksTimer); marksTimer = setTimeout(refreshMarks, 150); };
 
-// The reader's name: asked once per device, changeable (a shared tablet: each person types their own).
+// The reader's identity: asked once per device, changeable (a shared tablet: each person picks their own).
 function saveName() {
-  const box = document.getElementById('nm'), name = (box?.value || '').trim().replace(/\s+/g, ' ');
-  if (!name) return box?.focus();
-  S.name = name; store.set('be.name', name); S.nameSheet = false; render();
+  const box = document.getElementById('nm'), D = S.idDraft;
+  const me = D && Id.clean({ ...D, id: S.me?.id, nick: box ? box.value : D.nick });
+  if (!me) return;
+  S.me = me; Id.save(store, me); S.nameSheet = false; S.idDraft = null; render();
 }
+const myBy = () => S.me && { ...S.me };             // a copy kept on each change, comment and reply
 
 // ---- Autosave: a short pause after typing, and at once when leaving the book or the page ----
 let saveTimer;
@@ -616,24 +644,28 @@ function storyClick(a, k) {
   const M = S.mine, r = S.route;
   if (!M?.rec || r.view === 'shelf' || r.view === 'library') return;
   const rec = M.rec, id = rec.id, n = r.n;
-  const needName = () => { if (S.name) return false; S.nameSheet = true; render(); document.getElementById('nm')?.focus(); return true; };
+  const needName = () => { if (S.me) return false; openId(); render(); document.querySelector('.symbtn')?.focus(); return true; };
   const findC = k => { const [cid, rid] = String(k).split('/'), c = (rec.comments || []).find(x => x.id === cid); return { c, r: rid ? c?.replies?.find(x => x.id === rid) : null, rid }; };
   const focusId = id2 => { const el = document.getElementById(id2); el?.focus({ preventScroll: true }); el?.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
-  if (a === 'name-open' || a === 'need-name') { if (a === 'need-name' && S.name) return; S.nameSheet = true; render(); return document.getElementById('nm')?.focus(); }
-  if (a === 'name-close') { S.nameSheet = false; return render(); }
+  if (a === 'name-open' || a === 'need-name') { if (a === 'need-name' && S.me) return; openId(); render(); return document.querySelector('.symbtn[aria-pressed="true"]')?.focus() ?? document.querySelector('.symbtn')?.focus(); }
+  if (a === 'name-close') { S.nameSheet = false; S.idDraft = null; return render(); }
+  if ((a === 'id-sym' || a === 'id-col') && S.idDraft) {
+    S.idDraft[a === 'id-sym' ? 'symbol' : 'colour'] = k; render();
+    return document.querySelector(`[data-act="${a}"][data-k="${k}"]`)?.focus();
+  }
   if (a === 'name-save') return saveName();
   if (a === 'reply') { if (needName()) return; S.reply = { id: k, draft: '' }; render(); return focusId('rptext'); }
   if (a === 'reply-cancel') { S.reply = null; return render(); }
   if (a === 'reply-save') {
     const text = (document.getElementById('rptext')?.value || '').trim(), { c } = findC(S.reply.id);
     if (!text) return document.getElementById('rptext')?.focus();
-    if (c) { c.replies = [...(c.replies || []), Work.newReply(text, S.name)]; queueSave(); }
+    if (c) { c.replies = [...(c.replies || []), Work.newReply(text, myBy())]; queueSave(); }
     S.reply = null; return render();
   }
   if (a === 'resolve' || a === 'reopen') {
     if (a === 'resolve' && needName()) return;
     const { c } = findC(k); if (!c) return;
-    if (a === 'resolve') c.resolved = { by: S.name, at: new Date().toISOString() }; else delete c.resolved;
+    if (a === 'resolve') c.resolved = { by: myBy(), at: new Date().toISOString() }; else delete c.resolved;
     queueSave(); return render();
   }
   if (a === 'toggle-resolved') { S.showResolved = !S.showResolved; return render(); }
@@ -660,7 +692,7 @@ function storyClick(a, k) {
   }
   if (a === 'redo-lang' && S.redo) {
     const { words, info } = S.redo;
-    for (const f of Work.FIELDS) { Work.setValue(rec, n, f, k, words[f], S.name); Work.setEditInfo(rec, n, f, k, info[f]); }
+    for (const f of Work.FIELDS) { Work.setValue(rec, n, f, k, words[f], myBy()); Work.setEditInfo(rec, n, f, k, info[f]); }
     queueSave(); return render();
   }
   if (a === 'comment') {
@@ -679,7 +711,7 @@ function storyClick(a, k) {
   if (a === 'save-comment') {
     const box = document.getElementById('cmtext'), text = (box?.value || '').trim();
     if (!text) return box?.focus();
-    rec.comments = [...(rec.comments || []), Work.newComment({ spread: n, ...S.compose, text, by: S.name })];
+    rec.comments = [...(rec.comments || []), Work.newComment({ spread: n, ...S.compose, text, by: myBy() })];
     S.compose = null; S.sel = null; queueSave(); render();
     return document.querySelector('[data-act="comment"]')?.focus();
   }
@@ -710,7 +742,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && S.sheet) return closeSheet();
   if (e.key === 'Enter' && e.target.id === 'nf') { e.preventDefault(); return createFolder(); }
   if (e.key === 'Enter' && e.target.id === 'nm') { e.preventDefault(); return saveName(); }
-  if (e.key === 'Escape' && S.nameSheet) { S.nameSheet = false; return render(); }
+  if (e.key === 'Escape' && S.nameSheet) { S.nameSheet = false; S.idDraft = null; return render(); }
   if ((S.route.view !== 'read' && S.route.view !== 'mine') || S.langSheet || e.target.matches('input,textarea,select')) return;
   const story = S.route.view === 'read' ? S.books[S.route.id]?.story : S.mine?.rec?.story;
   if (!story) return;
@@ -726,8 +758,9 @@ document.addEventListener('input', e => {
   if (el.id === 'cmtext' && S.compose) { S.compose.draft = el.value; return; }
   if (el.id === 'rptext' && S.reply) { S.reply.draft = el.value; return; }
   if (el.id === 'ced' && S.editC) { S.editC.draft = el.value; return; }
-  if (!el.dataset?.f || S.route.view !== 'book' || !S.mine?.rec || !S.name) return;
-  Work.setValue(S.mine.rec, +el.dataset.n, el.dataset.f, el.dataset.l, el.value, S.name);
+  if (el.id === 'nm' && S.idDraft) { S.idDraft.nick = el.value; return; }
+  if (!el.dataset?.f || S.route.view !== 'book' || !S.mine?.rec || !S.me) return;
+  Work.setValue(S.mine.rec, +el.dataset.n, el.dataset.f, el.dataset.l, el.value, myBy());
   queueSave(); scheduleMarks();
 });
 document.addEventListener('change', e => {

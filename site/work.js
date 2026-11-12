@@ -3,11 +3,14 @@
 // Kept on the shelf book record (shelf.js):
 //   edits    { "<scene number>|<title|text>|<lang>": words }   only fields that differ from the book
 //   editBy   { same key: { by, at } }   who last changed that field, and when (track changes)
+//   by       the reader's identity { id, symbol, colour, nick? } (identity.js); older data: a typed name
 //   comments [{ id, spread, lang?, quote?, position?, text, by, made, edited?, resolved?: { by, at },
 //              replies: [{ id, text, by, made, edited? }] }]
 //            on selected words (lang, quote, position = where quote starts in the reader's text) or on the whole scene
 //   changed  ISO time of the last save
 // The changes file it becomes is described in docs/book-file-format.md §2.
+
+import { resolve } from './identity.js';
 
 export const FIELDS = ['title', 'text'];
 const key = (n, field, lang) => `${n}|${field}|${lang}`;
@@ -49,13 +52,13 @@ export function undo(rec, n, lang) {
 }
 
 /** Every change, in scene order, then the book's language order, title before text. */
-export function changeList(rec) {
+export function changeList(rec, me) {
   const out = [];
   const story = rec.story.slice().sort((a, b) => a.number - b.number);
   for (const s of story) for (const lang of rec.book.languages) for (const field of FIELDS)
     if (isChanged(rec, s.number, field, lang))
       out.push({ spread: s.number, lang, field, was: bookValue(rec, s.number, field, lang), now: value(rec, s.number, field, lang),
-        ...(editInfo(rec, s.number, field, lang)?.by ? { by: editInfo(rec, s.number, field, lang).by } : {}),
+        ...(editInfo(rec, s.number, field, lang)?.by ? { by: resolve(editInfo(rec, s.number, field, lang).by, me) } : {}),
         ...(editInfo(rec, s.number, field, lang)?.at ? { at: editInfo(rec, s.number, field, lang).at } : {}) });
   return out;
 }
@@ -119,13 +122,14 @@ export function diff(was, now) {
 /**
  * The changes file (docs/book-file-format.md §2), or null when there is nothing to send.
  * A comment's position follows its words if the reader edited the text after commenting.
+ * `me` = the reader's current identity: their own marks carry it, even if they changed it after making them.
  */
-export function changesFile(rec, layout) {
-  const changes = changeList(rec);
+export function changesFile(rec, layout, me) {
+  const changes = changeList(rec, me), W = by => resolve(by, me) || '';
   const comments = (rec.comments || []).slice().sort((a, b) => a.spread - b.spread || String(a.made).localeCompare(String(b.made))).map(c => {
-    const who = { by: c.by || '', made: c.made, ...(c.edited ? { edited: c.edited } : {}),
-      ...(c.resolved ? { resolved: c.resolved } : {}),
-      replies: (c.replies || []).map(r => ({ text: r.text, by: r.by || '', made: r.made, ...(r.edited ? { edited: r.edited } : {}) })) };
+    const who = { by: W(c.by), made: c.made, ...(c.edited ? { edited: c.edited } : {}),
+      ...(c.resolved ? { resolved: { ...c.resolved, by: W(c.resolved.by) } } : {}),
+      replies: (c.replies || []).map(r => ({ text: r.text, by: W(r.by), made: r.made, ...(r.edited ? { edited: r.edited } : {}) })) };
     if (!c.quote) return { spread: c.spread, text: c.text, ...who };
     const i = findQuote(value(rec, c.spread, 'text', c.lang), c.quote, c.position);
     return { spread: c.spread, lang: c.lang, quote: c.quote, position: i >= 0 ? i : c.position, text: c.text, ...who };
