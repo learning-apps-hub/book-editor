@@ -38,6 +38,7 @@ const S = {
   shelf: null, folders: [], shelfError: null, covers: {},      // shelf: book records from this device
   adding: null,                                                // { id, n, m } while a book is copied in
   mine: null,                                                  // { id, rec, urls } the shelf book being read
+  home: (() => { try { return { view: 'shelves', sort: 'changed', filter: 'all', ...JSON.parse(store.get('be.home')) }; } catch { return { view: 'shelves', sort: 'changed', filter: 'all' }; } })(),
   selecting: false, picked: new Set(), sheet: null, closed: {},  // sheet: 'move' | 'delete'
   // Story (a shelf book being edited)
   view: {}, scene: {},                                         // id -> story language shown ('all' = every one) / last scene
@@ -205,9 +206,14 @@ const ICON_READ = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" s
 const ICON_CHECK = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M7.5 12.5l3 3 6-6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 // ---- Screens ----
-function header() {
-  return `<header class="top"><button class="brand" data-act="go" data-k="library">${ICON_BOOK}<span class="bt">Book Editor</span></button>
-    <button class="langbig" data-act="lang-open" aria-haspopup="dialog" aria-label="${esc(T('dispLang'))}: ${esc(UI[S.ui].name)}">${ICON_GLOBE}<span>${esc(UI[S.ui].name)}</span><span class="car" aria-hidden="true">▾</span></button></header>`;
+// Header: eBooks' header.top (brand left, a .pubset pill right), the display language in that pill.
+function header(rec) {
+  // In a book: eBooks' book picker pill (cover letter, where it lives, the title); here it goes back to My shelf.
+  const pick = rec ? (() => { const t = titleOf(rec.book.titles, rec.book.languages, S.ui), tl = rec.book.titles?.[S.ui] ? S.ui : rec.book.languages[0];
+    return `<div class="pk"><button class="picker" data-act="go" data-k="shelf" aria-label="${esc(T('backShelf'))}"><span class="avatar" lang="${esc(tl)}">${esc([...t][0] || '?')}</span>
+      <span class="meta"><span class="tiny muted">${esc(T('backShelf'))}</span><b lang="${esc(tl)}">${esc(t)}</b></span></button></div>`; })() : '';
+  return `<header class="top"><button class="brand" data-act="go" data-k="library" aria-label="Book Editor">${ICON_BOOK}<span class="brand-name">Book Editor</span></button>${pick}<div class="grow"></div>
+    <button class="pubset langbig" data-act="lang-open" aria-haspopup="dialog" aria-label="${esc(T('dispLang'))}: ${esc(UI[S.ui].name)}">${ICON_GLOBE}<b>${esc(UI[S.ui].name)}</b><span class="car" aria-hidden="true">▾</span></button></header>`;
 }
 function langSheet() {
   if (!S.langSheet) return '';
@@ -215,10 +221,12 @@ function langSheet() {
     <h2 id="lh">${esc(T('dispLang'))}</h2><p>${esc(T('dispHelp'))}</p>
     <div class="langgrid">${Object.keys(UI).map(k => `<button class="langbtn" lang="${k}" aria-pressed="${k === S.ui}" data-act="ui" data-k="${k}">${esc(UI[k].name)}</button>`).join('')}</div></section></div>`;
 }
+// My shelf / Library: eBooks' step tabs (nav.steps .step .num .lbl .sub).
 function homeTabs(active) {
-  const n = { shelf: S.shelf ? S.shelf.length : '', library: S.lib ? S.lib.books.length : '' };
-  const tab = (k, icon) => `<button class="htab" role="tab" aria-selected="${active === k}" data-act="go" data-k="${k}">${icon}<span>${esc(T(k === 'shelf' ? 'myShelf' : 'library'))}</span>${n[k] === '' ? '' : `<span class="cnt">${n[k]}</span>`}</button>`;
-  return `<div class="hometabs" role="tablist">${tab('shelf', ICON_SHELF)}${tab('library', ICON_LIB)}</div>`;
+  const n = { shelf: S.shelf ? S.shelf.length : null, library: S.lib ? S.lib.books.length : null };
+  const tab = (k, icon) => `<button class="step${active === k ? ' on' : ''}" role="tab" aria-selected="${active === k}" data-act="go" data-k="${k}"><span class="num">${icon}</span>
+    <span class="lbl"><b>${esc(T(k === 'shelf' ? 'myShelf' : 'library'))}</b>${n[k] == null ? '' : `<span class="sub">${esc(T(n[k] === 1 ? 'books1' : 'booksN', { n: n[k] }))}</span>`}</span></button>`;
+  return `<nav class="steps" role="tablist">${tab('shelf', ICON_SHELF)}${tab('library', ICON_LIB)}</nav>`;
 }
 const problem = (key, act) => `<div class="msg ${key === 'tooNew' ? '' : 'bad'}" role="alert"><p>${esc(T(key))}</p>${act ? `<button class="btn" data-act="${act}">${esc(T('tryAgain'))}</button>` : ''}</div>`;
 const sampleNote = () => S.sample ? `<p class="muted" style="margin:0">${esc(T('sample'))}</p>` : '';
@@ -231,48 +239,95 @@ function addButton(id, big) {
     : `<button class="btn primary addbig" data-act="add" data-k="${esc(id)}" ${S.adding ? 'disabled' : ''}>${ICON_PEN}<span>${esc(T('addShelf'))}<small>${esc(T('addSub'))}</small></span></button>`;
 }
 
+// eBooks' cover card (coverCard): .bk > .cv (picture, or a plain coloured cover with its title) + .bk-t + .bk-s.
+const COVER_C = '#2F6B5E';
+const coverOf = (src, title) => src ? `<span class="cv img"><img src="${esc(src)}" alt="" loading="lazy">` : `<span class="cv plain"><span class="cvt">${esc(title)}</span>`;
 function libraryView() {
   if (S.libError) return problem(S.libError, S.libError === 'loadFail' ? 'retry-lib' : null);
   if (!S.lib) return `<div class="loading">${esc(T('loading'))}</div>`;
   const books = S.lib.books.slice().sort((a, b) => String(b.shared).localeCompare(String(a.shared)));
-  if (!books.length) return `<div class="empty"><p>${esc(T('libEmpty'))}</p></div>`;
+  const head = `<div class="home-h"><h1>${esc(T('library'))}</h1></div><p class="muted" style="margin:0">${esc(T('libIntro'))}</p>${sampleNote()}`;
+  if (!books.length) return `<div class="home">${head}<div class="emptybox"><p>${esc(T('libEmpty'))}</p></div></div>`;
   const card = b => {
     const title = titleOf(b.titles, b.languages, S.ui);
-    return `<div class="libcard"><button class="bk" data-act="read" data-k="${esc(b.id)}">
-        <span class="cov">${b.cover ? `<img src="${esc(S.libBase + b.cover)}" alt="" loading="lazy">` : ''}<span class="readtag">${ICON_READ}${esc(T('read'))}</span></span>
-        <b>${esc(title)}</b><span class="libmeta">${esc((b.languages || []).map(l => langName(l, b.languageNames)).join(' · '))}</span></button>
+    return `<div class="libcard"><button class="bk" data-act="read" data-k="${esc(b.id)}" style="--c:${COVER_C}">
+        ${coverOf(b.cover && S.libBase + b.cover, title)}<span class="readtag">${ICON_READ}${esc(T('read'))}</span></span>
+        <span class="bk-t">${esc(title)}</span><span class="bk-l">${esc((b.languages || []).map(l => langName(l, b.languageNames)).join(' · '))}</span></button>
       ${addButton(b.id, false)}</div>`;
   };
-  return `<p class="intro">${esc(T('libIntro'))}</p>${sampleNote()}<div class="shelf">${books.map(card).join('')}</div>`;
+  return `<div class="home">${head}<section class="shelf"><div class="covers">${books.map(card).join('')}</div></section></div>`;
 }
 
-const folderDot = i => `<span class="dot" style="background:hsl(${30 + i * 140} 45% 55%)" aria-hidden="true"></span>`;
-function shelfCard(b) {
-  const title = titleOf(b.titles, b.languages, S.ui), picked = S.picked.has(b.id), cover = S.covers[b.id];
-  const inner = `<span class="cov">${cover ? `<img src="${esc(cover)}" alt="">` : ''}${b.opened ? '' : `<span class="badge">${esc(T('isNew'))}</span>`}${S.selecting ? `<span class="pickbox" aria-hidden="true">${picked ? '✓' : ''}</span>` : ''}</span>
-    <b>${esc(title)}</b><span class="libmeta">${esc(!b.opened ? T('stNew') : b.sent ? sentText(b.sent) : countText(Work.counts(b)) || T('stNone'))}</span>`;
-  return S.selecting ? `<button class="bk" data-act="pick" data-k="${esc(b.id)}" aria-pressed="${picked}">${inner}</button>`
-    : `<button class="bk" data-act="open-mine" data-k="${esc(b.id)}">${inner}</button>`;
+const folderColour = i => `hsl(${30 + i * 140} 45% 55%)`;
+// Home tools (eBooks' renderMenu): view pills, Sort by, state chips. This browser's own choices.
+const bookState = b => !b.opened ? 'new' : b.sent ? 'sent' : (({ c, n, note }) => c || n || note)(Work.counts(b)) ? 'changed' : 'none';
+const HOME_SORTS = ['changed', 'title', 'added'], HOME_FILTERS = ['all', 'none', 'changed', 'sent'];
+const ago = iso => {
+  const s = (Date.now() - new Date(iso)) / 1000;
+  if (!(s >= 0)) return '';
+  const R = new Intl.RelativeTimeFormat(S.ui, { numeric: 'auto' });
+  return s < 3600 ? R.format(-Math.max(1, Math.floor(s / 60)), 'minute') : s < 86400 ? R.format(-Math.floor(s / 3600), 'hour') : s < 7 * 86400 ? R.format(-Math.floor(s / 86400), 'day') : when(iso);
+};
+function homeTools(extra = '') {
+  const h = S.home;
+  return `<div class="hometools">
+    <div class="pills" role="group" aria-label="${esc(T('hView'))}">${[['shelves', 'hShelves'], ['all', 'hAll']].map(([k, l]) =>
+      `<button class="pill" aria-pressed="${h.view === k}" data-act="home-view" data-k="${k}">${esc(T(l))}</button>`).join('')}</div>
+    <label class="sortby">${esc(T('sortBy'))} <select class="box" id="home-sort">${HOME_SORTS.map(k => `<option value="${k}" ${h.sort === k ? 'selected' : ''}>${esc(T('sort_' + k))}</option>`).join('')}</select></label>
+    <div class="fchips" role="group" aria-label="${esc(T('hShow'))}">${HOME_FILTERS.map(k =>
+      `<button class="fchip st-${k}" aria-pressed="${h.filter === k}" data-act="home-filter" data-k="${k}">${k === 'all' ? '' : '<i></i>'}${esc(T(k === 'all' ? 'fAll' : 'f_' + k))}</button>`).join('')}</div>${extra}</div>`;
+}
+function shelfCard(b, c = COVER_C) {
+  const title = titleOf(b.titles, b.languages, S.ui), picked = S.picked.has(b.id), st = bookState(b);
+  const badge = st === 'new' ? T('isNew') : st === 'changed' ? T('f_changed') : st === 'sent' ? (b.sent.kind === 'final' ? T('stApprovedB') : T('f_sent')) : '';
+  const status = st === 'new' ? T('stNew') : b.sent ? sentText(b.sent) : countText(Work.counts(b)) || T('stNone');
+  const left = b.opened && (b.changed || b.added) ? `<span class="bk-l">${esc(T('leftOff', { t: ago(b.changed || b.added) }))}</span>` : '';
+  const inner = `${coverOf(S.covers[b.id], title)}${badge ? `<span class="badge">${esc(badge)}</span>` : ''}${S.selecting ? `<span class="pickbox" aria-hidden="true">${picked ? '✓' : ''}</span>` : ''}</span>
+    <span class="bk-t">${esc(title)}</span><span class="bk-s">${esc(status)}</span>${left}`;
+  return `<button class="bk st-${st}" style="--c:${c}" data-act="${S.selecting ? 'pick' : 'open-mine'}" data-k="${esc(b.id)}"${S.selecting ? ` aria-pressed="${picked}"` : ''}>${inner}</button>`;
+}
+// eBooks' folded shelf: one book-like "folder", the first covers fanned out behind it.
+function shelfFolder(name, key, c, bs) {
+  const fan = bs.filter(b => S.covers[b.id]).slice(0, 3);
+  const counts = HOME_FILTERS.slice(1).map(k => [k, bs.filter(b => (bookState(b) === 'new' ? 'none' : bookState(b)) === k).length]).filter(x => x[1]);
+  return `<button class="folder" data-act="fold" data-k="${esc(key)}" style="--c:${c}" aria-expanded="false">
+    <span class="fan">${fan.map((b, i) => `<img class="f${i}" src="${esc(S.covers[b.id])}" alt="" loading="lazy">`).join('')}
+      <span class="scv"><span class="scv-n">${esc(name)}</span><span class="scv-c">${esc(T(bs.length === 1 ? 'books1' : 'booksN', { n: bs.length }))}</span></span></span>
+    <span class="fstates">${counts.map(([k, n]) => `<span class="fst st-${k}"><i></i>${n} ${esc(T('f_' + k).toLowerCase())}</span>`).join('')}</span>
+    <span class="fopen">${esc(T('openShelf'))} ›</span></button>`;
 }
 function shelfView() {
   if (!S.shelf) return `<div class="loading">${esc(T('loading'))}</div>`;
   if (S.shelfError) return problem(S.shelfError);
-  if (!S.shelf.length) return `<div class="empty"><p>${esc(T('shelfEmpty'))}</p><button class="btn primary bigbtn" data-act="go" data-k="library">${ICON_LIB}${esc(T('goLibrary'))}</button></div>`;
-  const byTitle = (a, b) => titleOf(a.titles, a.languages, S.ui).localeCompare(titleOf(b.titles, b.languages, S.ui), S.ui);
-  const group = (f, i) => {
-    const items = S.shelf.filter(b => (b.folder || '') === f).sort(byTitle), key = f || '_', open = !S.closed[key];
-    if (!f && !items.length && S.selecting) return '';
-    const tile = !f && !S.selecting ? `<button class="addtile" data-act="go" data-k="library"><span class="plus" aria-hidden="true">+</span>${esc(T('addFromLib'))}<small>${esc(T('addFromLibS'))}</small></button>` : '';
-    const label = f ? `${folderDot(i)}${esc(f)}` : esc(T('noFolder'));
-    // With no folders yet there is nothing to fold: show the books without a heading.
-    if (!S.folders.length) return `<div class="shelf">${items.map(shelfCard).join('')}${tile}</div>`;
-    return `<section class="fold"><button class="foldh" data-act="fold" data-k="${esc(key)}" aria-expanded="${open}"><span class="car" aria-hidden="true">${open ? '▾' : '▸'}</span>${label}<span class="n">· ${esc(T(items.length === 1 ? 'books1' : 'booksN', { n: items.length }))}</span></button>
-      ${open ? `<div class="shelf">${items.map(shelfCard).join('')}${tile}</div>` : ''}</section>`;
-  };
-  const intro = S.selecting
-    ? `<div class="introrow"><p>${esc(T('pickSome'))}</p><button class="btn bigbtn" data-act="select-off">${esc(T('done'))}</button></div>`
-    : `<div class="introrow"><p>${esc(T('shelfIntro'))}</p><button class="btn bigbtn" data-act="select-on">${ICON_CHECK}${esc(T('select'))}</button></div>`;
-  return `${intro}${S.folders.map(group).join('')}${group('', 0)}<p class="foot">${esc(T('keep'))}</p>`;
+  const h = S.home;
+  const head = (tools) => `<div class="home-h"><h1>${esc(T('myShelf'))}</h1>${tools}</div>`;
+  if (!S.shelf.length) return `<div class="home">${head('')}<div class="emptybox"><p>${esc(T('shelfEmpty'))}</p><button class="btn primary bigbtn" data-act="go" data-k="library">${ICON_LIB}${esc(T('goLibrary'))}</button></div></div>`;
+  const ttl = b => titleOf(b.titles, b.languages, S.ui);
+  const by = { title: (a, b) => ttl(a).localeCompare(ttl(b), S.ui), added: (a, b) => (b.added || '').localeCompare(a.added || ''),
+    changed: (a, b) => (b.changed || b.added || '').localeCompare(a.changed || a.added || '') }[h.sort] || (() => 0);
+  const keep = b => h.filter === 'all' || (h.filter === 'none' ? ['none', 'new'].includes(bookState(b)) : bookState(b) === h.filter);
+  const nothing = `<div class="muted small empty">${esc(T('hNone'))}</div>`;
+  const tile = () => S.selecting ? '' : `<button class="addtile" data-act="go" data-k="library"><span class="plus" aria-hidden="true">+</span>${esc(T('addFromLib'))}<small>${esc(T('addFromLibS'))}</small></button>`;
+  const covers = (bs, c, withTile) => `<div class="covers">${bs.map(b => shelfCard(b, c)).join('') || nothing}${withTile ? tile() : ''}</div>`;
+  let body;
+  if (h.view === 'all' || !S.folders.length) {
+    const bs = S.shelf.filter(keep).sort(by);
+    body = `<section class="shelf">${h.view === 'all' ? `<div class="shelf-h"><b>${esc(T('hAll'))}</b><span class="muted">· ${esc(T(bs.length === 1 ? 'books1' : 'booksN', { n: bs.length }))}</span></div>` : ''}${covers(bs, COVER_C, true)}</section>`;
+  } else {
+    const groups = [...S.folders.map((f, i) => [f, f, folderColour(i)]), ['', '_', COVER_C]];
+    body = groups.map(([f, key, c]) => {
+      const all = S.shelf.filter(b => (b.folder || '') === f);
+      if (!f && !all.length && S.selecting) return '';
+      const folded = !!S.closed[key], name = f || T('noFolder');
+      const head = `<div class="shelf-h"><button class="foldbtn" data-act="fold" data-k="${esc(key)}" aria-expanded="${!folded}"><span class="chev">${folded ? '▸' : '▾'}</span><span class="dot" style="background:${c}"></span><b>${esc(name)}</b><span class="muted">· ${esc(T(all.length === 1 ? 'books1' : 'booksN', { n: all.length }))}</span></button></div>`;
+      if (folded && all.length) return `<section class="shelf folded">${head}${shelfFolder(name, key, c, all)}</section>`;
+      return `<section class="shelf">${head}${covers(all.filter(keep).sort(by), c, !f)}</section>`;
+    }).join('');
+  }
+  const sel = S.selecting
+    ? `<div class="row"><span class="grow">${esc(T('pickSome'))}</span><button class="btn" data-act="select-off">${esc(T('done'))}</button></div>`
+    : `<button class="btn selbtn" data-act="select-on">${ICON_CHECK}${esc(T('select'))}</button>`;
+  return `<div class="home">${head(homeTools(S.selecting ? '' : sel))}${S.selecting ? sel : ''}${body}<p class="small muted homefoot">${esc(T('keep'))}</p></div>`;
 }
 function actBar() {
   if (!S.selecting || S.route.view !== 'shelf') return '';
@@ -285,7 +340,7 @@ function shelfSheet() {
   if (S.sheet === 'move') {
     return `<div class="sheetbox" data-act="sheet-close"><section class="card" role="dialog" aria-modal="true" aria-labelledby="mh" data-stop="1">
       <div class="sheethead"><h2 id="mh">${esc(T('moveTitle'))}</h2><button class="btn" data-act="sheet-close">${esc(T('cancel'))}</button></div>
-      <div class="movelist">${S.folders.map((f, i) => `<button data-act="move-to" data-k="${esc(f)}">${folderDot(i)}${esc(f)}</button>`).join('')}<button data-act="move-to" data-k="">${esc(T('noFolder'))}</button></div>
+      <div class="movelist">${S.folders.map((f, i) => `<button data-act="move-to" data-k="${esc(f)}"><span class="dot" style="background:${folderColour(i)}" aria-hidden="true"></span>${esc(f)}</button>`).join('')}<button data-act="move-to" data-k="">${esc(T('noFolder'))}</button></div>
       <div class="newf"><input id="nf" maxlength="40" autocomplete="off" placeholder="${esc(T('folderPh'))}" aria-label="${esc(T('folderPh'))}"><button class="btn primary" data-act="create-folder">${esc(T('createMove'))}</button></div></section></div>`;
   }
   if (S.sheet === 'delete') {
@@ -342,6 +397,7 @@ function readerScreen() {
 // ---- A shelf book: top bar, Story / Layout steps ----
 const ICON_CM = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>';
 const ICON_CM_S = ICON_CM.replace(/width="20" height="20"/, 'width="14" height="14"');
+const ICON_TICK = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1F4A41" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>';
 const ICON_EYE = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 
 function countText({ c, n, note }) {
@@ -349,13 +405,6 @@ function countText({ c, n, note }) {
 }
 // Sent back or approved: what the shelf card and the status box say.
 const sentText = sent => T(sent.kind === 'final' ? 'stApproved' : 'stSent', { n: sent.round + 1 });
-function statusBox(rec) {
-  const k = Work.counts(rec), what = countText(k), R = `<span class="rtag">${esc(T('roundN', { n: Work.round(rec) }))}</span>`;
-  if (rec.sent) return `<div class="status ok" id="stbox">${R}<b>${esc(sentText(rec.sent))}</b><span>${esc(when(rec.sent.at))}</span>${whoAmI()}</div>`;
-  return what
-    ? `<div class="status todo" id="stbox">${R}<b>${esc(T('notSent'))}</b><span>${esc(what)} · ${esc(T('keptHere'))}</span>${whoAmI()}</div>`
-    : `<div class="status ok" id="stbox">${R}<b>${esc(T('noChg'))}</b><span>${esc(T('noChgT'))}</span>${whoAmI()}</div>`;
-}
 const whoAmI = () => S.me ? `<span class="whoami">${Th('you', { name: chip(S.me) })}<button class="btn quiet" data-act="name-open">${esc(T('changeName'))}</button></span>` : '';
 const when = iso => { try { return new Intl.DateTimeFormat(S.ui, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso)); } catch { return ''; } };
 // Who: an avatar (picture on the person's colour) + nickname if any. Older data: a typed name.
@@ -394,26 +443,27 @@ const viewOf = (id, langs) => {
   return v === 'all' || langs.includes(v) ? v : langs.includes(S.ui) ? S.ui : langs[0];
 };
 
+// ---- The book: eBook Production's renderBook (header with the book's picker pill, nav.steps, the tab) ----
 function bookScreen() {
-  const { id } = S.route, M = S.mine, back = `<button class="btn bigbtn" data-act="go" data-k="shelf">${esc(T('backShelf'))}</button>`;
-  if (!M || M.id !== id || M.loading) return `<div class="rtop">${back}</div><div class="loading">${esc(T('loading'))}</div>`;
-  if (M.gone) return `<div class="rtop">${back}</div>${problem('notOnShelf')}`;
-  const rec = M.rec, book = rec.book, tl = book.titles?.[S.ui] ? S.ui : book.languages[0];
-  const what = countText(Work.counts(rec)), story = S.route.tab === 'story';
-  const step = (key, icon, sub, subId) => `<button class="step" role="tab" aria-selected="${S.route.tab === key}" data-act="tab" data-k="${key}"><span class="ic">${icon}</span>
-    <span class="st"><b>${esc(T(key))}</b><span${subId ? ` id="${subId}"` : ''}>${esc(sub)}</span></span></button>`;
-  return `<div class="rtop">${back}<h2 lang="${esc(tl)}">${esc(titleOf(book.titles, book.languages, S.ui))}</h2></div>
-    ${statusBox(rec)}
-    <div class="steps" role="tablist">${step('story', ICON_PEN, what || T('storySub'), 'storysub')}${step('layout', ICON_EYE, T('layoutSub'))}</div>
-    ${story ? storyView(rec) + nextBar(rec) : `<section class="card"><div class="msg"><p>${esc(T('layoutSoon'))}</p></div></section>`}`;
+  const { id } = S.route, M = S.mine, back = `<div class="row"><button class="btn" data-act="go" data-k="shelf">${esc(T('backShelf'))}</button></div>`;
+  if (!M || M.id !== id || M.loading) return header() + `${back}<div class="loading">${esc(T('loading'))}</div>`;
+  if (M.gone) return header() + back + problem('notOnShelf');
+  const rec = M.rec, story = S.route.tab === 'story', sent = rec.sent;
+  const step = (key, num, state, sub, subId) => `<button class="step ${state}${S.route.tab === key ? ' on' : ''}" role="tab" aria-selected="${S.route.tab === key}" data-act="tab" data-k="${key}">
+      <span class="num">${num}</span><span class="lbl"><b>${esc(T(key))}</b><span class="sub"${subId ? ` id="${subId}"` : ''}>${esc(sub)}</span></span></button>`;
+  const nav = `<nav class="steps" role="tablist">${step('story', sent ? '✓' : '1', sent ? 'done' : 'yours', storySub(rec), 'storysub')}${step('layout', '2', '', T('layoutSub'))}</nav>`;
+  return header(rec) + nav + (story ? storyView(rec) : `<section class="next"><div class="waiting"><span class="tick">${ICON_EYE}</span><span class="muted">${esc(T('layoutSoon'))}</span></div></section>`);
 }
+// The Story step's line: sent / approved, else the round and what is waiting to go.
+const storySub = rec => rec.sent ? sentText(rec.sent) : [T('roundN', { n: Work.round(rec) }), countText(Work.counts(rec)) || T('storySub')].join(' · ');
 
-// ---- Story, as eBook Production's ----
+// ---- Story, as eBook Production's storyTab ----
 // The story is shown once, as page text. Each Replace is kept as made: its new words are marked in the colour of whoever
 // made it, and it has one note at the side (the words taken out struck through, the new words, Undo). Commented words are amber.
 // Selecting words opens a pop-up: Comment on them, or Replace them. Once the round is sent the story is locked.
 const edId = id => `ed-${id}`;
-function markedHtml(rec, n, f, l) {
+// eBooks' paragraphs(): <mark> runs from per-character flags. `tag` is p for the story, span for a title line.
+function markedHtml(rec, n, f, l, tag = 'p') {
   const L = Work.layer(rec, n, f, l), text = L.text, C = new Array(text.length).fill('');
   const byId = new Map((rec.edits || []).map(e => [e.id, e]));
   if (f === 'text') for (const c of Work.sceneComments(rec, n)) {
@@ -435,107 +485,101 @@ function markedHtml(rec, n, f, l) {
       run += line[i];
     }
     flush();
-    const cls = f === 'title' ? 'stitle' : line.trim() ? '' : 'gap';
-    out.push(`<p data-para data-n="${n}" data-f="${f}" data-l="${esc(l)}" data-off="${off}"${cls ? ` class="${cls}"` : ''}>${html}</p>`);
+    out.push(`<${tag} data-para data-n="${n}" data-f="${f}" data-l="${esc(l)}" data-off="${off}"${tag === 'p' && !line.trim() ? ' class="gap"' : ''}>${html}</${tag}>`);
     off += line.length + 1;
   }
   return out.join('');
 }
-// One note per Replace: "<avatar> changed", where, the words taken out struck through, the new words, Undo.
+const langLabel = (l, names) => /^(zh|ja|ko)/.test(l) ? langName(l, names) : l.toUpperCase();
+// One note per Replace (eBooks' .note.edit): "<avatar> changed", the words taken out struck through, the new words, Undo.
 function editNote(rec, e, locked) {
-  const where = `${T(e.field === 'title' ? 'fTitle' : 'fText')} · ${langName(e.lang, rec.book.languageNames)}`;
-  return `<div class="cm chn" id="${esc(edId(e.id))}"${hl(e.by)}><div class="cmmeta">${Th('whoChanged', { name: chip(e.by) })}<span>${esc(when(e.at))}</span></div>
-    <div class="cmtop"><span class="cml">${esc(where)}</span></div>
-    ${e.quote ? `<div class="chwas" lang="${esc(e.lang)}"><del>${esc(e.quote)}</del></div>` : ''}
-    ${e.text ? `<button class="chnow" data-act="show-change" data-k="${esc(e.id)}" lang="${esc(e.lang)}"${hl(e.by)}>${esc(e.text)}</button>` : `<span class="cml">${esc(T('removedW'))}</span>`}
-    ${locked ? '' : `<div class="row cmacts"><button class="btn quiet" data-act="undo-edit" data-k="${esc(e.id)}">${esc(T('undo'))}</button></div>`}</div>`;
+  return `<div class="note edit" id="${esc(edId(e.id))}"${hl(e.by)}><div class="head"><span class="chip">${esc(langLabel(e.lang, rec.book.languageNames))}${e.field === 'title' ? ` · ${esc(T('fTitle'))}` : ''}</span>${Th('whoChanged', { name: chip(e.by) })}</div>
+      ${e.quote ? `<div class="quote" lang="${esc(e.lang)}" style="text-decoration:line-through;opacity:.7">${esc(e.quote)}</div>` : ''}
+      ${e.text ? `<button class="chnow" data-act="show-change" data-k="${esc(e.id)}" lang="${esc(e.lang)}">${esc(e.text)}</button>` : `<div class="tiny muted">${esc(T('removedW'))}</div>`}
+      <div class="tiny muted">${esc(when(e.at))}</div>
+      ${locked ? '' : `<div class="row" style="justify-content:flex-end"><button class="btn small quiet" data-act="undo-edit" data-k="${esc(e.id)}">${esc(T('undo'))}</button></div>`}</div>`;
 }
-// The pop-up under selected words: one box for a comment or the new words. A title can only be changed.
+// eBooks' pop-up under selected words: one box for a comment or the new words. A title can only be changed.
 function popHtml() {
   const P = S.pop;
   if (!P || !S.mine?.rec) return '';
   const t = P.f === 'title';
-  return `<div class="pop" id="pop" role="dialog" aria-labelledby="poph" style="top:${P.top}px">
-    <div class="flbl" id="poph">${esc(T(t ? 'popTitleT' : 'popTitle'))} · ${esc(langName(P.l, S.mine.rec.book.languageNames))}</div>
-    <div class="cmq" lang="${esc(P.l)}">“${esc(P.quote)}”</div>
-    <label class="flbl" for="draft">${esc(T(t ? 'newWords' : 'draftLbl'))}</label>
-    <textarea id="draft">${esc(P.draft || '')}</textarea>
-    <p class="pophelp">${esc(T(t ? 'popHelpT' : 'popHelp'))}</p>
-    <div class="row popacts"><button class="btn" data-act="pop-cancel">${esc(T('cancel'))}</button><button class="btn" data-act="pop-replace">${esc(T('replace'))}</button>${t ? '' : `<button class="btn primary" data-act="pop-comment">${ICON_CM}${esc(T('comment'))}</button>`}</div></div>`;
+  return `<div class="pop" id="pop" role="dialog" aria-labelledby="poph" style="top:${P.top}px;left:${P.left}px">
+    <div class="tiny muted" style="font-weight:700" id="poph">${esc(T(t ? 'popTitleT' : 'popTitle'))} · ${esc(langName(P.l, S.mine.rec.book.languageNames))}</div>
+    <div class="quote" lang="${esc(P.l)}">${esc(P.quote)}</div>
+    <label class="field tiny muted" style="font-weight:600">${esc(T(t ? 'newWords' : 'draftLbl'))}<textarea class="box" rows="3" id="draft">${esc(P.draft || '')}</textarea></label>
+    <div class="tiny muted">${esc(T(t ? 'popHelpT' : 'popHelp'))}</div>
+    <div class="row" style="justify-content:flex-end"><button class="btn small" data-act="pop-cancel">${esc(T('cancel'))}</button><button class="btn small" data-act="pop-replace">${esc(T('replace'))}</button>${t ? '' : `<button class="btn small primary" data-act="pop-comment">${esc(T('comment'))}</button>`}</div></div>`;
 }
-const quoteChip = c => c.quote
-  ? `<button class="cmq" data-act="show-comment" data-k="${esc(c.id)}" lang="${esc(c.lang)}">“${esc(c.quote)}”</button>`
-  : `<span class="cmq whole">${esc(T('wholeScene'))}</span>`;
 
 function storyView(rec) {
-  const id = rec.id, book = rec.book, langs = book.languages, story = rec.story, m = story.length, urls = S.mine.urls;
+  const id = rec.id, book = rec.book, langs = book.languages, story = rec.story, m = story.length, names = book.languageNames;
   const n = Math.min(S.route.n, m), view = viewOf(id, langs), all = view === 'all', shown = all ? langs : [view];
-  const tl = all ? (langs.includes(S.ui) ? S.ui : langs[0]) : view, P = book.pictures || {}, locked = !!rec.sent;
-  const thumb = k => { const p = P.colour?.[k] || P.small?.[k] || P.colouring?.[k]; return p && urls[p] ? `<img src="${esc(urls[p])}" alt="">` : ''; };
+  const tl = all ? langs[0] : view, locked = !!rec.sent;
   const sceneTitle = x => Work.value(rec, x, 'title', tl);
-  const toc = `<nav class="toc" aria-labelledby="toch"><div class="lbl" id="toch">${esc(T('scenes'))}</div>${story.map(s => {
-    const x = s.number, cc = Work.sceneComments(rec, x).length;
-    return `<button data-act="scene" data-k="${x}" aria-current="${x === n}"><span class="th">${thumb(String(x))}</span><span class="num">${x}</span>
-      <span class="tt" lang="${esc(tl)}">${esc(sceneTitle(x))}</span>
-      <span class="marks">${Work.sceneChanged(rec, x) ? `<span class="edited" title="${esc(T('changed'))}">✎</span>` : ''}${cc ? `<span class="cmc" title="${esc(T(cc === 1 ? 'cm1' : 'cmN', { n: cc }))}">${ICON_CM_S}${cc}</span>` : ''}</span></button>`;
-  }).join('')}</nav>`;
-  const mob = `<select class="scenesel" id="at" aria-label="${esc(T('scenes'))}">${story.map(s =>
-    `<option value="${s.number}" ${s.number === n ? 'selected' : ''}>${esc(T('sceneN', { n: s.number }))} · ${esc(sceneTitle(s.number))}${Work.sceneChanged(rec, s.number) ? ' ✎' : ''}</option>`).join('')}</select>`;
-  const seg = langs.length > 1 ? `<div class="seg" role="group" aria-label="${esc(T('showLang'))}">${langs.map(l =>
-    `<button lang="${esc(l)}" aria-pressed="${l === view}" data-act="view" data-k="${esc(l)}">${esc(langName(l, book.languageNames))}</button>`).join('')}
-    <button aria-pressed="${all}" data-act="view" data-k="all">${esc(T('allLangs'))}</button></div>` : '';
-  const block = l => `<div class="langblock" lang="${esc(l)}">${all ? `<div class="lname">${esc(langName(l, book.languageNames))}</div>` : ''}
-      ${markedHtml(rec, n, 'title', l)}<div class="story">${markedHtml(rec, n, 'text', l)}</div></div>`;
-  const nav = `<div class="spnav"><span>${n > 1 ? `<button class="btn bigbtn" data-act="scene" data-k="${n - 1}">${esc(T('prevScene', { n: n - 1 }))}</button>` : ''}</span>
-    <span>${n < m ? `<button class="btn primary bigbtn" data-act="scene" data-k="${n + 1}">${esc(T('nextScene', { n: n + 1 }))}</button>` : ''}</span></div>`;
-  // Comments: Edit and Delete for their own maker while the round is open (no replies, no Resolve: the author's next round answers).
+  // One line a scene, in view while you read; a phone shows "Scene 3".
+  const side = `<div class="side compact"><div class="eyebrow">${esc(T('scenes').toLocaleUpperCase(S.ui))}</div>${story.map(s => {
+    const x = s.number, cc = Work.sceneComments(rec, x).length, ch = Work.sceneChanged(rec, x);
+    return `<button class="item ${x === n ? 'on' : ''}" data-act="scene" data-k="${x}" ${x === n ? 'aria-current="true"' : ''} title="${esc(sceneTitle(x))}"><span class="t"><span class="t1"><b><span class="lbl">${esc(T('sceneN', { n: x }))}</span><span class="nonly">${x}</span></b><span class="ttl" lang="${esc(tl)}">${esc(sceneTitle(x))}</span></span></span>${ch ? `<span class="rtag mine" title="${esc(T('changed'))}">✎</span>` : ''}${cc ? `<span class="count" title="${esc(T(cc === 1 ? 'cm1' : 'cmN', { n: cc }))}">${cc}</span>` : ''}</button>`;
+  }).join('')}</div>`;
+  const pills = [...langs.map(l => ({ code: l, label: langLabel(l, names) })), ...(langs.length > 1 ? [{ code: 'all', label: T('allLangs') }] : [])]
+    .map(p => `<button class="pill" aria-pressed="${p.code === view}" data-act="view" data-k="${esc(p.code)}"${p.code === 'all' ? '' : ` lang="${esc(p.code)}" title="${esc(langName(p.code, names))}"`}>${esc(p.label)}</button>`).join('');
+  const blocks = shown.map(l => `<div class="block" lang="${esc(l)}">${all ? `<div class="lname">${esc(langName(l, names).toLocaleUpperCase(l))}</div><div class="btitle">${markedHtml(rec, n, 'title', l, 'span')}</div>` : ''}
+      ${markedHtml(rec, n, 'text', l)}</div>`).join('');
+  const heading = all ? esc(sceneTitle(n)) : markedHtml(rec, n, 'title', view, 'span');
+  const navBtn = (x, dir) => x >= 1 && x <= m ? `<button class="btn small" data-act="scene" data-k="${x}">${esc(T(dir < 0 ? 'prevScene' : 'nextScene', { n: x }))}</button>` : '<span></span>';
+  const nav = m > 1 ? `<div class="spnav">${navBtn(n - 1, -1)}${navBtn(n + 1, 1)}</div>` : '';
+  const hint = `<div class="hint">${locked ? `<span>${esc(T('lockedHint'))}</span>` : `${ICON_PEN}<span style="flex:1 1 220px">${esc(T('selHint'))}</span>`}${whoAmI()}</div>`;
+  const pane = `<div class="pane" id="pane"><div class="row" style="justify-content:space-between;align-items:flex-end;margin-bottom:18px">
+      <div style="display:flex;flex-direction:column;gap:4px;min-width:0"><span class="small muted" style="font-weight:700">${esc(T('sceneOf', { n, m }))}<span class="savest ${S.save === 'fail' ? 'bad' : ''}" id="savest" aria-live="polite">${esc(saveText())}</span></span>
+      <span class="heading" lang="${esc(tl)}" id="scenetitle">${heading}</span></div>
+      ${pills ? `<div class="pills" role="group" aria-label="${esc(T('showLang'))}">${pills}</div>` : ''}</div>
+    <div class="story" id="storytext">${blocks}</div>
+    ${hint}${nav}${S.pop?.n === n && shown.includes(S.pop.l) && !locked ? popHtml() : ''}</div>`;
+  // Comments: Edit and Remove for their own maker while the round is open (no replies, no Resolve: the author's next round answers).
   const own = by => !locked && Id.isOwn(by, S.me, OLD_NAME);
-  const card = c => `<div class="cm" id="cm-${esc(c.id)}"${hl(c.by)}><div class="cmmeta">${byLine(c.by, c.made, c.edited)}</div>
-      <div class="cmtop">${quoteChip(c)}${c.quote ? `<span class="cml">${esc(langName(c.lang, book.languageNames))}</span>` : ''}</div>
-      ${S.editC?.k === c.id ? `<label class="flbl" for="ced">${esc(T('edit'))}</label><textarea id="ced">${esc(S.editC.draft)}</textarea>
-        <div class="row"><button class="btn primary" data-act="edit-save">${esc(T('save'))}</button><button class="btn" data-act="edit-cancel">${esc(T('cancel'))}</button></div>` : `<p>${esc(c.text)}</p>`}
-      ${S.delC === c.id ? `<div class="row delask"><b>${esc(T('delC'))}</b><button class="btn danger-solid" data-act="del-c-yes" data-k="${esc(c.id)}">${esc(T('del'))}</button><button class="btn" data-act="del-c-no">${esc(T('keepIt'))}</button></div>`
+  const card = c => `<div class="note" id="cm-${esc(c.id)}"${hl(c.by)}><div class="head">${c.lang ? `<span class="chip">${esc(langLabel(c.lang, names))}</span>` : ''}${chip(c.by)}</div>
+      ${c.quote ? `<button class="quote" data-act="show-comment" data-k="${esc(c.id)}" lang="${esc(c.lang)}">${esc(c.quote)}</button>` : `<div class="quote">${esc(T('wholeScene'))}</div>`}
+      ${S.editC?.k === c.id ? `<textarea class="box" rows="3" id="ced" aria-label="${esc(T('edit'))}">${esc(S.editC.draft)}</textarea>
+        <div class="row" style="justify-content:flex-end"><button class="btn small" data-act="edit-cancel">${esc(T('cancel'))}</button><button class="btn small primary" data-act="edit-save">${esc(T('save'))}</button></div>`
+        : `<div style="font-size:15px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere">${esc(c.text)}</div>`}
+      <div class="tiny muted">${esc(when(c.made))}${c.edited ? ` · ${esc(T('editedT'))}` : ''}</div>
+      ${S.delC === c.id ? `<div class="row" style="justify-content:flex-end"><b class="small" style="flex:1 1 100%">${esc(T('delC'))}</b><button class="btn small" data-act="del-c-no">${esc(T('keepIt'))}</button><button class="btn small danger-solid" data-act="del-c-yes" data-k="${esc(c.id)}">${esc(T('del'))}</button></div>`
         : S.editC?.k === c.id || !own(c.by) ? ''
-        : `<div class="row cmacts"><button class="btn quiet" data-act="edit-c" data-k="${esc(c.id)}">${esc(T('edit'))}</button><button class="btn quiet del-c" data-act="del-comment" data-k="${esc(c.id)}">${esc(T('del'))}</button></div>`}</div>`;
+        : `<div class="row" style="justify-content:flex-end"><button class="btn small quiet" data-act="edit-c" data-k="${esc(c.id)}">${esc(T('edit'))}</button><button class="btn small quiet danger" data-act="del-comment" data-k="${esc(c.id)}">${esc(T('del'))}</button></div>`}</div>`;
   const notes = Work.sceneComments(rec, n).map(card).join('') + Work.sceneEdits(rec, n).map(e => editNote(rec, e, locked)).join('');
-  const hint = locked ? `<p class="selhint">${esc(T('lockedHint'))}</p>` : `<p class="selhint">${ICON_PEN}<span>${esc(T('selHint'))}</span></p>`;
-  return `<div class="three">${toc}
-    <section class="card scenecard">${mob}
-      <div class="scenehead"><span class="lbl">${esc(T('sceneOf', { n, m }))}</span><span class="savest ${S.save === 'fail' ? 'bad' : ''}" id="savest" aria-live="polite">${esc(saveText())}</span></div>
-      ${seg}${hint}
-      <div id="storytext">${shown.map(block).join('')}</div>${nav}${S.pop?.n === n && shown.includes(S.pop.l) && !locked ? popHtml() : ''}</section>
-    <aside class="cmside" aria-labelledby="cmh"><h3 class="lbl" id="cmh">${esc(T('notesOn'))}</h3>${notes || `<div class="emptyc">${esc(T('noComments'))}</div>`}</aside></div>`;
+  const aside = `<aside class="notes" aria-label="${esc(T('notesOn'))}"><div class="eyebrow">${esc(T('notesOn').toLocaleUpperCase(S.ui))}</div>
+      ${notes || `<div class="note muted small" style="border-style:dashed">${esc(T('noComments'))}</div>`}</aside>`;
+  return `${doneBar(rec)}<div class="cols">${side}${pane}${aside}</div>${nextBar(rec)}`;
 }
 
-// The Next round bar under the story (eBook Production's): what goes, + Note for this round (the whole story),
+// Sent back or approved: eBooks' done-bar (reopenBar) above the story, with Save the file again and Unlock.
+function doneBar(rec) {
+  if (!rec.sent) return '';
+  const fin = rec.sent.kind === 'final';
+  return `<div class="done-bar"><span class="tick">${ICON_TICK}</span><div class="grow" style="flex-basis:260px"><b>${esc(T(fin ? 'approvedBar' : 'sentBar', { n: fin ? rec.sent.round : rec.sent.round + 1, t: when(rec.sent.at) }))}</b>
+    <div class="small muted">${esc(T(fin ? 'approvedSub' : 'sentSub'))}</div></div>
+    <button class="btn small" data-act="save-again">${esc(T('saveAgain'))}</button><button class="btn small" data-act="unlock">${esc(T('unlock'))}</button></div>`;
+}
+// eBooks' Next round bar (nextRound, fold): what goes, + Note for this round (the whole story),
 // Send back for round n+1 (the author rewrites) or Approve story (final: kept as lessons, nothing rewritten).
 function nextBar(rec) {
-  const R = Work.round(rec);
-  if (rec.sent) {
-    const fin = rec.sent.kind === 'final';
-    return `<section class="nr done" aria-label="${esc(T('nextRound'))}"><span class="tick" aria-hidden="true">✓</span>
-      <div class="nr-t"><b>${esc(T(fin ? 'approvedBar' : 'sentBar', { n: fin ? rec.sent.round : rec.sent.round + 1, t: when(rec.sent.at) }))}</b>
-        <span class="muted">${esc(T(fin ? 'approvedSub' : 'sentSub'))}</span></div>
-      <div class="nr-b"><button class="btn" data-act="save-again">${esc(T('saveAgain'))}</button><button class="btn" data-act="unlock">${esc(T('unlock'))}</button></div></section>`;
-  }
-  const open = S.noteOpen[rec.id] || !!(rec.note || '').trim();
-  return `<section class="nr" aria-labelledby="nrh">
-    <div class="nr-foot"><div class="nr-a"><div class="nr-title"><b id="nrh">${esc(T('nextRound'))}</b><span class="muted" id="nrst">${esc(sendLine(rec))}</span></div>
-      ${open ? '' : `<button class="btn quiet" data-act="note-open">+ ${esc(T('noteRound'))}</button>`}</div>
+  if (rec.sent) return '';
+  const R = Work.round(rec), open = S.noteOpen[rec.id] || !!(rec.note || '').trim();
+  const box = open ? `<label class="field small">${esc(T('noteRound'))}<textarea class="box" id="rnote" rows="2" placeholder="${esc(T('notePh'))}">${esc(rec.note || '')}</textarea></label>` : '';
+  return `<section class="next nr fold" aria-label="${esc(T('nextRound'))}">
+    <div class="nr-foot"><div class="nr-a"><div class="nr-title"><b>${esc(T('nextRound'))}</b><span class="muted" id="nrst">${esc(sendLine(rec))}</span></div>
+      ${open ? '' : `<button class="btn small quiet" data-act="note-open">+ ${esc(T('noteRound'))}</button>`}</div><div class="grow"></div>
       <div class="nr-b"><button class="btn" data-act="ask-send" data-k="rewrite" id="sendbtn" ${countText(Work.counts(rec)) ? '' : 'disabled'}>${esc(T('sendRound', { n: R + 1 }))}</button>
-        <button class="btn primary" data-act="ask-send" data-k="final">${esc(T('approve'))}</button></div></div>
-    ${open ? `<label class="flbl" for="rnote">${esc(T('noteRound'))}</label><textarea id="rnote" rows="2" placeholder="${esc(T('notePh'))}">${esc(rec.note || '')}</textarea>` : ''}
-  </section>`;
+        <button class="btn primary" data-act="ask-send" data-k="final">${esc(T('approve'))}</button></div></div>${box}</section>`;
 }
 const sendLine = rec => { const w = countText(Work.counts(rec)); return w ? T('toSend', { what: w }) : T('nothingYet'); };
 // Typing the round note doesn't re-render (it would lose the caret): the counts follow in place.
 function liveCounts(rec) {
-  const w = countText(Work.counts(rec)), st = document.getElementById('nrst'), b = document.getElementById('sendbtn'), sub = document.getElementById('storysub');
+  const st = document.getElementById('nrst'), b = document.getElementById('sendbtn'), sub = document.getElementById('storysub');
   if (st) st.textContent = sendLine(rec);
-  if (b) b.disabled = !w;
-  if (sub) sub.textContent = w || T('storySub');
-  const box = document.getElementById('stbox');
-  if (box && !rec.sent) box.outerHTML = statusBox(rec);
+  if (b) b.disabled = !countText(Work.counts(rec));
+  if (sub) sub.textContent = storySub(rec);
 }
 // Send back / Approve story: a file is saved on this device; the reader sends it to the author (email, chat).
 function sendSheet() {
@@ -606,7 +650,7 @@ function render() {
   const f = document.activeElement, keep = f?.id && app.contains(f)
     ? { id: f.id, s: f.selectionStart, e: f.selectionEnd, d: f.selectionDirection, top: f.scrollTop } : null;
   app.classList.toggle('selecting', S.selecting && r.view === 'shelf');
-  app.innerHTML = header() + main + actBar() + shelfSheet() + sendSheet() + nameSheet() + langSheet();
+  app.innerHTML = (r.view === 'book' ? '' : header()) + main + actBar() + shelfSheet() + sendSheet() + nameSheet() + langSheet();
   const el = keep && document.getElementById(keep.id);
   if (el) {
     el.focus({ preventScroll: true });
@@ -668,6 +712,7 @@ document.addEventListener('click', e => {
   if (a === 'lang-open') { S.langSheet = true; render(); return document.querySelector('.langbtn[aria-pressed="true"]')?.focus(); }
   if (a === 'lang-close') { S.langSheet = false; render(); return document.querySelector('.langbig')?.focus(); }
   if (a === 'ui') { S.ui = k; store.set('be.ui', k); S.langSheet = false; render(); return document.querySelector('.langbig')?.focus(); }
+  if (a === 'home-view' || a === 'home-filter') { S.home[a === 'home-view' ? 'view' : 'filter'] = k; store.set('be.home', JSON.stringify(S.home)); return render(); }
   if (a === 'fold') { S.closed[k] = !S.closed[k]; return render(); }
   if (a === 'select-on') { S.selecting = true; S.picked.clear(); return render(); }
   if (a === 'select-off') { S.selecting = false; S.picked.clear(); return render(); }
@@ -703,13 +748,13 @@ function storyClick(a, k) {
     const e = (rec.edits || []).find(x => x.id === k);
     if (!e) return;
     if (!shownLangs(rec).includes(e.lang)) { S.view[id] = e.lang; render(); }
-    return flash(document.querySelector(`#storytext mark[data-e="${CSS.escape(e.id)}"]`));
+    return flash(document.querySelector(`#pane mark[data-e="${CSS.escape(e.id)}"]`));
   }
   if (a === 'show-comment') {
     const c = (rec.comments || []).find(x => x.id === k);
     if (!c) return;
     if (!shownLangs(rec).includes(c.lang)) { S.view[id] = c.lang; render(); }
-    return flash(document.querySelector(`#storytext mark[data-c="${CSS.escape(c.id)}"]`));
+    return flash(document.querySelector(`#pane mark[data-c="${CSS.escape(c.id)}"]`));
   }
   // The round: Send back / Approve story make the file; Unlock opens the story again.
   if (a === 'ask-send') { S.sendAsk = k === 'final' ? 'final' : 'rewrite'; render(); return document.querySelector('[data-act="send-yes"]')?.focus(); }
@@ -788,7 +833,7 @@ function onSelect(focus) {
   if (r.view !== 'book' || r.tab !== 'story' || !S.mine?.rec || S.mine.rec.sent || S.composing || S.nameSheet || S.sendAsk) return;
   const sel = getSelection();
   if (!sel || sel.isCollapsed || !sel.rangeCount) return;
-  const range = sel.getRangeAt(0), box = document.getElementById('storytext');
+  const range = sel.getRangeAt(0), box = document.getElementById('pane');
   const para = node => (node?.nodeType === 1 ? node : node?.parentElement)?.closest('[data-para]');
   const pa = para(range.startContainer), pb = para(range.endContainer);
   if (!pa || !pb || !box?.contains(pa) || !box.contains(pb) || pa.dataset.l !== pb.dataset.l || pa.dataset.f !== pb.dataset.f) return;
@@ -800,11 +845,11 @@ function onSelect(focus) {
   if (end <= start) return;
   const P = S.pop;
   if (P && P.n === n && P.f === f && P.l === l && P.start === start && P.end === end) { if (focus) focusDraft(); return; }
-  const card = document.querySelector('.scenecard')?.getBoundingClientRect(), rect = range.getBoundingClientRect();
-  if (!card) return;
-  S.pop = { n, f, l, start, end, quote: text.slice(start, end), draft: P?.draft || '', top: Math.round(rect.bottom - card.top + 10) };
+  const pane = box.getBoundingClientRect(), rect = range.getBoundingClientRect();
+  S.pop = { n, f, l, start, end, quote: text.slice(start, end), draft: P?.draft || '', top: Math.round(rect.bottom - pane.top + 8),
+    left: Math.round(Math.max(12, Math.min(rect.left - pane.left, pane.width - 352))) };
   const old = document.getElementById('pop');
-  if (old) old.outerHTML = popHtml(); else document.querySelector('.scenecard').insertAdjacentHTML('beforeend', popHtml());
+  if (old) old.outerHTML = popHtml(); else box.insertAdjacentHTML('beforeend', popHtml());
   if (focus) focusDraft();
 }
 function focusDraft() {
@@ -814,7 +859,7 @@ function focusDraft() {
 }
 // Mouse: at once, typing goes straight into the box. Touch (long-press, handles) and keyboard: after the selection settles,
 // without moving focus, so the selection stays adjustable.
-document.addEventListener('mouseup', e => { if (e.target.closest?.('#storytext')) setTimeout(() => onSelect(true), 0); });
+document.addEventListener('mouseup', e => { if (e.target.closest?.('#pane [data-para]')) setTimeout(() => onSelect(true), 0); });
 let selTimer;
 document.addEventListener('selectionchange', () => { clearTimeout(selTimer); selTimer = setTimeout(() => onSelect(false), 450); });
 document.addEventListener('keydown', e => {
@@ -843,6 +888,7 @@ document.addEventListener('input', e => {
   if (el.id === 'draft' && S.pop) { S.pop.draft = el.value; return; }
 });
 document.addEventListener('change', e => {
+  if (e.target.id === 'home-sort') { S.home.sort = e.target.value; store.set('be.home', JSON.stringify(S.home)); render(); return document.getElementById('home-sort')?.focus(); }
   if (e.target.id === 'at' && S.mine?.rec) go(bookHash(S.mine.rec.id, +e.target.value), true);
 });
 document.addEventListener('compositionstart', () => { S.composing = true; });
