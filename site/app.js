@@ -38,6 +38,7 @@ const S = {
   shelf: null, folders: [], shelfError: null, covers: {},      // shelf: book records from this device
   adding: null,                                                // { id, n, m } while a book is copied in
   mine: null,                                                  // { id, rec, urls } the shelf book being read
+  home: (() => { try { return { view: 'shelves', sort: 'changed', filter: 'all', ...JSON.parse(store.get('be.home')) }; } catch { return { view: 'shelves', sort: 'changed', filter: 'all' }; } })(),
   selecting: false, picked: new Set(), sheet: null, closed: {},  // sheet: 'move' | 'delete'
   // Story (a shelf book being edited)
   view: {}, scene: {},                                         // id -> story language shown ('all' = every one) / last scene
@@ -250,29 +251,54 @@ const folderDot = i => `<span class="dot" style="background:hsl(${30 + i * 140} 
 function shelfCard(b) {
   const title = titleOf(b.titles, b.languages, S.ui), picked = S.picked.has(b.id), cover = S.covers[b.id];
   const inner = `<span class="cov">${cover ? `<img src="${esc(cover)}" alt="">` : ''}${b.opened ? '' : `<span class="badge">${esc(T('isNew'))}</span>`}${S.selecting ? `<span class="pickbox" aria-hidden="true">${picked ? '✓' : ''}</span>` : ''}</span>
-    <b>${esc(title)}</b><span class="libmeta">${esc(!b.opened ? T('stNew') : b.sent ? sentText(b.sent) : countText(Work.counts(b)) || T('stNone'))}</span>`;
+    <b>${esc(title)}</b><span class="libmeta">${esc(!b.opened ? T('stNew') : b.sent ? sentText(b.sent) : countText(Work.counts(b)) || T('stNone'))}</span>${b.opened && (b.changed || b.added) ? `<span class="libmeta left">${esc(T('leftOff', { t: ago(b.changed || b.added) }))}</span>` : ''}`;
   return S.selecting ? `<button class="bk" data-act="pick" data-k="${esc(b.id)}" aria-pressed="${picked}">${inner}</button>`
     : `<button class="bk" data-act="open-mine" data-k="${esc(b.id)}">${inner}</button>`;
+}
+// Home tools (ported from eBook Production's Home): view, sort and filter are this browser's own.
+const bookState = b => b.sent ? 'sent' : (Work.counts(b).c || Work.counts(b).n || Work.counts(b).note) ? 'changed' : 'none';
+const HOME_SORTS = ['changed', 'title', 'added'], HOME_FILTERS = ['all', 'none', 'changed', 'sent'];
+const ago = iso => {
+  const s = (Date.now() - new Date(iso)) / 1000;
+  if (!(s >= 0)) return '';
+  const R = new Intl.RelativeTimeFormat(S.ui, { numeric: 'auto' });
+  return s < 3600 ? R.format(-Math.max(1, Math.floor(s / 60)), 'minute') : s < 86400 ? R.format(-Math.floor(s / 3600), 'hour') : s < 7 * 86400 ? R.format(-Math.floor(s / 86400), 'day') : when(iso);
+};
+function homeTools() {
+  const h = S.home, pill = (k, l) => `<button class="pill" aria-pressed="${h.view === k}" data-act="home-view" data-k="${k}">${esc(T(l))}</button>`;
+  return `<div class="hometools"><div class="pills" role="group" aria-label="${esc(T('hView'))}">${pill('shelves', 'hShelves')}${pill('all', 'hAll')}</div>
+    <label class="sortby">${esc(T('sortBy'))} <select class="box" id="home-sort">${HOME_SORTS.map(k => `<option value="${k}" ${h.sort === k ? 'selected' : ''}>${esc(T('sort_' + k))}</option>`).join('')}</select></label>
+    <div class="fchips" role="group" aria-label="${esc(T('hShow'))}">${HOME_FILTERS.map(k => `<button class="fchip st-${k}" aria-pressed="${h.filter === k}" data-act="home-filter" data-k="${k}">${k === 'all' ? '' : '<i></i>'}${esc(T(k === 'all' ? 'fAll' : 'f_' + k))}</button>`).join('')}</div></div>`;
 }
 function shelfView() {
   if (!S.shelf) return `<div class="loading">${esc(T('loading'))}</div>`;
   if (S.shelfError) return problem(S.shelfError);
   if (!S.shelf.length) return `<div class="empty"><p>${esc(T('shelfEmpty'))}</p><button class="btn primary bigbtn" data-act="go" data-k="library">${ICON_LIB}${esc(T('goLibrary'))}</button></div>`;
-  const byTitle = (a, b) => titleOf(a.titles, a.languages, S.ui).localeCompare(titleOf(b.titles, b.languages, S.ui), S.ui);
+  const h = S.home, ttl = b => titleOf(b.titles, b.languages, S.ui);
+  const by = { title: (a, b) => ttl(a).localeCompare(ttl(b), S.ui), added: (a, b) => (b.added || '').localeCompare(a.added || ''),
+    changed: (a, b) => (b.changed || b.added || '').localeCompare(a.changed || a.added || '') }[h.sort] || (() => 0);
+  const keep = b => h.filter === 'all' || (h.filter === 'none' ? bookState(b) === 'none' || !b.opened : bookState(b) === h.filter);
+  const nothing = `<p class="empty small">${esc(T('hNone'))}</p>`;
   const group = (f, i) => {
-    const items = S.shelf.filter(b => (b.folder || '') === f).sort(byTitle), key = f || '_', open = !S.closed[key];
-    if (!f && !items.length && S.selecting) return '';
+    const all = S.shelf.filter(b => (b.folder || '') === f), items = all.filter(keep).sort(by), key = f || '_', open = !S.closed[key];
+    if (!f && !all.length && S.selecting) return '';
     const tile = !f && !S.selecting ? `<button class="addtile" data-act="go" data-k="library"><span class="plus" aria-hidden="true">+</span>${esc(T('addFromLib'))}<small>${esc(T('addFromLibS'))}</small></button>` : '';
     const label = f ? `${folderDot(i)}${esc(f)}` : esc(T('noFolder'));
-    // With no folders yet there is nothing to fold: show the books without a heading.
-    if (!S.folders.length) return `<div class="shelf">${items.map(shelfCard).join('')}${tile}</div>`;
-    return `<section class="fold"><button class="foldh" data-act="fold" data-k="${esc(key)}" aria-expanded="${open}"><span class="car" aria-hidden="true">${open ? '▾' : '▸'}</span>${label}<span class="n">· ${esc(T(items.length === 1 ? 'books1' : 'booksN', { n: items.length }))}</span></button>
-      ${open ? `<div class="shelf">${items.map(shelfCard).join('')}${tile}</div>` : ''}</section>`;
+    const grid = (items.length ? '' : nothing) + `<div class="shelf">${items.map(shelfCard).join('')}${tile}</div>`;
+    if (!S.folders.length) return items.length || tile ? grid : nothing;
+    if (!all.length && !f) return '';
+    return `<section class="fold"><button class="foldh" data-act="fold" data-k="${esc(key)}" aria-expanded="${open}"><span class="car" aria-hidden="true">${open ? '▾' : '▸'}</span>${label}<span class="n">· ${esc(T(all.length === 1 ? 'books1' : 'booksN', { n: all.length }))}</span></button>
+      ${open ? (items.length || tile ? grid : nothing) : ''}</section>`;
   };
   const intro = S.selecting
     ? `<div class="introrow"><p>${esc(T('pickSome'))}</p><button class="btn bigbtn" data-act="select-off">${esc(T('done'))}</button></div>`
     : `<div class="introrow"><p>${esc(T('shelfIntro'))}</p><button class="btn bigbtn" data-act="select-on">${ICON_CHECK}${esc(T('select'))}</button></div>`;
-  return `${intro}${S.folders.map(group).join('')}${group('', 0)}<p class="foot">${esc(T('keep'))}</p>`;
+  let body;
+  if (h.view === 'all') {
+    const items = S.shelf.filter(keep).sort(by);
+    body = items.length ? `<div class="shelf">${items.map(shelfCard).join('')}</div>` : nothing;
+  } else body = S.folders.map(group).join('') + group('', 0);
+  return `${intro}${homeTools()}${body}<p class="foot">${esc(T('keep'))}</p>`;
 }
 function actBar() {
   if (!S.selecting || S.route.view !== 'shelf') return '';
@@ -668,6 +694,7 @@ document.addEventListener('click', e => {
   if (a === 'lang-open') { S.langSheet = true; render(); return document.querySelector('.langbtn[aria-pressed="true"]')?.focus(); }
   if (a === 'lang-close') { S.langSheet = false; render(); return document.querySelector('.langbig')?.focus(); }
   if (a === 'ui') { S.ui = k; store.set('be.ui', k); S.langSheet = false; render(); return document.querySelector('.langbig')?.focus(); }
+  if (a === 'home-view' || a === 'home-filter') { S.home[a === 'home-view' ? 'view' : 'filter'] = k; store.set('be.home', JSON.stringify(S.home)); return render(); }
   if (a === 'fold') { S.closed[k] = !S.closed[k]; return render(); }
   if (a === 'select-on') { S.selecting = true; S.picked.clear(); return render(); }
   if (a === 'select-off') { S.selecting = false; S.picked.clear(); return render(); }
@@ -843,6 +870,7 @@ document.addEventListener('input', e => {
   if (el.id === 'draft' && S.pop) { S.pop.draft = el.value; return; }
 });
 document.addEventListener('change', e => {
+  if (e.target.id === 'home-sort') { S.home.sort = e.target.value; store.set('be.home', JSON.stringify(S.home)); render(); return document.getElementById('home-sort')?.focus(); }
   if (e.target.id === 'at' && S.mine?.rec) go(bookHash(S.mine.rec.id, +e.target.value), true);
 });
 document.addEventListener('compositionstart', () => { S.composing = true; });
