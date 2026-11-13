@@ -207,8 +207,12 @@ const ICON_CHECK = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" 
 
 // ---- Screens ----
 // Header: eBooks' header.top (brand left, a .pubset pill right), the display language in that pill.
-function header() {
-  return `<header class="top"><button class="brand" data-act="go" data-k="library" aria-label="Book Editor">${ICON_BOOK}<span class="brand-name">Book Editor</span></button><div class="grow"></div>
+function header(rec) {
+  // In a book: eBooks' book picker pill (cover letter, where it lives, the title); here it goes back to My shelf.
+  const pick = rec ? (() => { const t = titleOf(rec.book.titles, rec.book.languages, S.ui), tl = rec.book.titles?.[S.ui] ? S.ui : rec.book.languages[0];
+    return `<div class="pk"><button class="picker" data-act="go" data-k="shelf" aria-label="${esc(T('backShelf'))}"><span class="avatar" lang="${esc(tl)}">${esc([...t][0] || '?')}</span>
+      <span class="meta"><span class="tiny muted">${esc(T('backShelf'))}</span><b lang="${esc(tl)}">${esc(t)}</b></span></button></div>`; })() : '';
+  return `<header class="top"><button class="brand" data-act="go" data-k="library" aria-label="Book Editor">${ICON_BOOK}<span class="brand-name">Book Editor</span></button>${pick}<div class="grow"></div>
     <button class="pubset langbig" data-act="lang-open" aria-haspopup="dialog" aria-label="${esc(T('dispLang'))}: ${esc(UI[S.ui].name)}">${ICON_GLOBE}<b>${esc(UI[S.ui].name)}</b><span class="car" aria-hidden="true">▾</span></button></header>`;
 }
 function langSheet() {
@@ -393,6 +397,7 @@ function readerScreen() {
 // ---- A shelf book: top bar, Story / Layout steps ----
 const ICON_CM = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>';
 const ICON_CM_S = ICON_CM.replace(/width="20" height="20"/, 'width="14" height="14"');
+const ICON_TICK = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1F4A41" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>';
 const ICON_EYE = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 
 function countText({ c, n, note }) {
@@ -400,13 +405,6 @@ function countText({ c, n, note }) {
 }
 // Sent back or approved: what the shelf card and the status box say.
 const sentText = sent => T(sent.kind === 'final' ? 'stApproved' : 'stSent', { n: sent.round + 1 });
-function statusBox(rec) {
-  const k = Work.counts(rec), what = countText(k), R = `<span class="rtag">${esc(T('roundN', { n: Work.round(rec) }))}</span>`;
-  if (rec.sent) return `<div class="status ok" id="stbox">${R}<b>${esc(sentText(rec.sent))}</b><span>${esc(when(rec.sent.at))}</span>${whoAmI()}</div>`;
-  return what
-    ? `<div class="status todo" id="stbox">${R}<b>${esc(T('notSent'))}</b><span>${esc(what)} · ${esc(T('keptHere'))}</span>${whoAmI()}</div>`
-    : `<div class="status ok" id="stbox">${R}<b>${esc(T('noChg'))}</b><span>${esc(T('noChgT'))}</span>${whoAmI()}</div>`;
-}
 const whoAmI = () => S.me ? `<span class="whoami">${Th('you', { name: chip(S.me) })}<button class="btn quiet" data-act="name-open">${esc(T('changeName'))}</button></span>` : '';
 const when = iso => { try { return new Intl.DateTimeFormat(S.ui, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso)); } catch { return ''; } };
 // Who: an avatar (picture on the person's colour) + nickname if any. Older data: a typed name.
@@ -445,26 +443,27 @@ const viewOf = (id, langs) => {
   return v === 'all' || langs.includes(v) ? v : langs.includes(S.ui) ? S.ui : langs[0];
 };
 
+// ---- The book: eBook Production's renderBook (header with the book's picker pill, nav.steps, the tab) ----
 function bookScreen() {
-  const { id } = S.route, M = S.mine, back = `<button class="btn bigbtn" data-act="go" data-k="shelf">${esc(T('backShelf'))}</button>`;
-  if (!M || M.id !== id || M.loading) return `<div class="rtop">${back}</div><div class="loading">${esc(T('loading'))}</div>`;
-  if (M.gone) return `<div class="rtop">${back}</div>${problem('notOnShelf')}`;
-  const rec = M.rec, book = rec.book, tl = book.titles?.[S.ui] ? S.ui : book.languages[0];
-  const what = countText(Work.counts(rec)), story = S.route.tab === 'story';
-  const step = (key, icon, sub, subId) => `<button class="step" role="tab" aria-selected="${S.route.tab === key}" data-act="tab" data-k="${key}"><span class="ic">${icon}</span>
-    <span class="st"><b>${esc(T(key))}</b><span${subId ? ` id="${subId}"` : ''}>${esc(sub)}</span></span></button>`;
-  return `<div class="rtop">${back}<h2 lang="${esc(tl)}">${esc(titleOf(book.titles, book.languages, S.ui))}</h2></div>
-    ${statusBox(rec)}
-    <div class="steps" role="tablist">${step('story', ICON_PEN, what || T('storySub'), 'storysub')}${step('layout', ICON_EYE, T('layoutSub'))}</div>
-    ${story ? storyView(rec) + nextBar(rec) : `<section class="card"><div class="msg"><p>${esc(T('layoutSoon'))}</p></div></section>`}`;
+  const { id } = S.route, M = S.mine, back = `<div class="row"><button class="btn" data-act="go" data-k="shelf">${esc(T('backShelf'))}</button></div>`;
+  if (!M || M.id !== id || M.loading) return header() + `${back}<div class="loading">${esc(T('loading'))}</div>`;
+  if (M.gone) return header() + back + problem('notOnShelf');
+  const rec = M.rec, story = S.route.tab === 'story', sent = rec.sent;
+  const step = (key, num, state, sub, subId) => `<button class="step ${state}${S.route.tab === key ? ' on' : ''}" role="tab" aria-selected="${S.route.tab === key}" data-act="tab" data-k="${key}">
+      <span class="num">${num}</span><span class="lbl"><b>${esc(T(key))}</b><span class="sub"${subId ? ` id="${subId}"` : ''}>${esc(sub)}</span></span></button>`;
+  const nav = `<nav class="steps" role="tablist">${step('story', sent ? '✓' : '1', sent ? 'done' : 'yours', storySub(rec), 'storysub')}${step('layout', '2', '', T('layoutSub'))}</nav>`;
+  return header(rec) + nav + (story ? storyView(rec) : `<section class="next"><div class="waiting"><span class="tick">${ICON_EYE}</span><span class="muted">${esc(T('layoutSoon'))}</span></div></section>`);
 }
+// The Story step's line: sent / approved, else the round and what is waiting to go.
+const storySub = rec => rec.sent ? sentText(rec.sent) : [T('roundN', { n: Work.round(rec) }), countText(Work.counts(rec)) || T('storySub')].join(' · ');
 
-// ---- Story, as eBook Production's ----
+// ---- Story, as eBook Production's storyTab ----
 // The story is shown once, as page text. Each Replace is kept as made: its new words are marked in the colour of whoever
 // made it, and it has one note at the side (the words taken out struck through, the new words, Undo). Commented words are amber.
 // Selecting words opens a pop-up: Comment on them, or Replace them. Once the round is sent the story is locked.
 const edId = id => `ed-${id}`;
-function markedHtml(rec, n, f, l) {
+// eBooks' paragraphs(): <mark> runs from per-character flags. `tag` is p for the story, span for a title line.
+function markedHtml(rec, n, f, l, tag = 'p') {
   const L = Work.layer(rec, n, f, l), text = L.text, C = new Array(text.length).fill('');
   const byId = new Map((rec.edits || []).map(e => [e.id, e]));
   if (f === 'text') for (const c of Work.sceneComments(rec, n)) {
@@ -486,107 +485,101 @@ function markedHtml(rec, n, f, l) {
       run += line[i];
     }
     flush();
-    const cls = f === 'title' ? 'stitle' : line.trim() ? '' : 'gap';
-    out.push(`<p data-para data-n="${n}" data-f="${f}" data-l="${esc(l)}" data-off="${off}"${cls ? ` class="${cls}"` : ''}>${html}</p>`);
+    out.push(`<${tag} data-para data-n="${n}" data-f="${f}" data-l="${esc(l)}" data-off="${off}"${tag === 'p' && !line.trim() ? ' class="gap"' : ''}>${html}</${tag}>`);
     off += line.length + 1;
   }
   return out.join('');
 }
-// One note per Replace: "<avatar> changed", where, the words taken out struck through, the new words, Undo.
+const langLabel = (l, names) => /^(zh|ja|ko)/.test(l) ? langName(l, names) : l.toUpperCase();
+// One note per Replace (eBooks' .note.edit): "<avatar> changed", the words taken out struck through, the new words, Undo.
 function editNote(rec, e, locked) {
-  const where = `${T(e.field === 'title' ? 'fTitle' : 'fText')} · ${langName(e.lang, rec.book.languageNames)}`;
-  return `<div class="cm chn" id="${esc(edId(e.id))}"${hl(e.by)}><div class="cmmeta">${Th('whoChanged', { name: chip(e.by) })}<span>${esc(when(e.at))}</span></div>
-    <div class="cmtop"><span class="cml">${esc(where)}</span></div>
-    ${e.quote ? `<div class="chwas" lang="${esc(e.lang)}"><del>${esc(e.quote)}</del></div>` : ''}
-    ${e.text ? `<button class="chnow" data-act="show-change" data-k="${esc(e.id)}" lang="${esc(e.lang)}"${hl(e.by)}>${esc(e.text)}</button>` : `<span class="cml">${esc(T('removedW'))}</span>`}
-    ${locked ? '' : `<div class="row cmacts"><button class="btn quiet" data-act="undo-edit" data-k="${esc(e.id)}">${esc(T('undo'))}</button></div>`}</div>`;
+  return `<div class="note edit" id="${esc(edId(e.id))}"${hl(e.by)}><div class="head"><span class="chip">${esc(langLabel(e.lang, rec.book.languageNames))}${e.field === 'title' ? ` · ${esc(T('fTitle'))}` : ''}</span>${Th('whoChanged', { name: chip(e.by) })}</div>
+      ${e.quote ? `<div class="quote" lang="${esc(e.lang)}" style="text-decoration:line-through;opacity:.7">${esc(e.quote)}</div>` : ''}
+      ${e.text ? `<button class="chnow" data-act="show-change" data-k="${esc(e.id)}" lang="${esc(e.lang)}">${esc(e.text)}</button>` : `<div class="tiny muted">${esc(T('removedW'))}</div>`}
+      <div class="tiny muted">${esc(when(e.at))}</div>
+      ${locked ? '' : `<div class="row" style="justify-content:flex-end"><button class="btn small quiet" data-act="undo-edit" data-k="${esc(e.id)}">${esc(T('undo'))}</button></div>`}</div>`;
 }
-// The pop-up under selected words: one box for a comment or the new words. A title can only be changed.
+// eBooks' pop-up under selected words: one box for a comment or the new words. A title can only be changed.
 function popHtml() {
   const P = S.pop;
   if (!P || !S.mine?.rec) return '';
   const t = P.f === 'title';
-  return `<div class="pop" id="pop" role="dialog" aria-labelledby="poph" style="top:${P.top}px">
-    <div class="flbl" id="poph">${esc(T(t ? 'popTitleT' : 'popTitle'))} · ${esc(langName(P.l, S.mine.rec.book.languageNames))}</div>
-    <div class="cmq" lang="${esc(P.l)}">“${esc(P.quote)}”</div>
-    <label class="flbl" for="draft">${esc(T(t ? 'newWords' : 'draftLbl'))}</label>
-    <textarea id="draft">${esc(P.draft || '')}</textarea>
-    <p class="pophelp">${esc(T(t ? 'popHelpT' : 'popHelp'))}</p>
-    <div class="row popacts"><button class="btn" data-act="pop-cancel">${esc(T('cancel'))}</button><button class="btn" data-act="pop-replace">${esc(T('replace'))}</button>${t ? '' : `<button class="btn primary" data-act="pop-comment">${ICON_CM}${esc(T('comment'))}</button>`}</div></div>`;
+  return `<div class="pop" id="pop" role="dialog" aria-labelledby="poph" style="top:${P.top}px;left:${P.left}px">
+    <div class="tiny muted" style="font-weight:700" id="poph">${esc(T(t ? 'popTitleT' : 'popTitle'))} · ${esc(langName(P.l, S.mine.rec.book.languageNames))}</div>
+    <div class="quote" lang="${esc(P.l)}">${esc(P.quote)}</div>
+    <label class="field tiny muted" style="font-weight:600">${esc(T(t ? 'newWords' : 'draftLbl'))}<textarea class="box" rows="3" id="draft">${esc(P.draft || '')}</textarea></label>
+    <div class="tiny muted">${esc(T(t ? 'popHelpT' : 'popHelp'))}</div>
+    <div class="row" style="justify-content:flex-end"><button class="btn small" data-act="pop-cancel">${esc(T('cancel'))}</button><button class="btn small" data-act="pop-replace">${esc(T('replace'))}</button>${t ? '' : `<button class="btn small primary" data-act="pop-comment">${esc(T('comment'))}</button>`}</div></div>`;
 }
-const quoteChip = c => c.quote
-  ? `<button class="cmq" data-act="show-comment" data-k="${esc(c.id)}" lang="${esc(c.lang)}">“${esc(c.quote)}”</button>`
-  : `<span class="cmq whole">${esc(T('wholeScene'))}</span>`;
 
 function storyView(rec) {
-  const id = rec.id, book = rec.book, langs = book.languages, story = rec.story, m = story.length, urls = S.mine.urls;
+  const id = rec.id, book = rec.book, langs = book.languages, story = rec.story, m = story.length, names = book.languageNames;
   const n = Math.min(S.route.n, m), view = viewOf(id, langs), all = view === 'all', shown = all ? langs : [view];
-  const tl = all ? (langs.includes(S.ui) ? S.ui : langs[0]) : view, P = book.pictures || {}, locked = !!rec.sent;
-  const thumb = k => { const p = P.colour?.[k] || P.small?.[k] || P.colouring?.[k]; return p && urls[p] ? `<img src="${esc(urls[p])}" alt="">` : ''; };
+  const tl = all ? langs[0] : view, locked = !!rec.sent;
   const sceneTitle = x => Work.value(rec, x, 'title', tl);
-  const toc = `<nav class="toc" aria-labelledby="toch"><div class="lbl" id="toch">${esc(T('scenes'))}</div>${story.map(s => {
-    const x = s.number, cc = Work.sceneComments(rec, x).length;
-    return `<button data-act="scene" data-k="${x}" aria-current="${x === n}"><span class="th">${thumb(String(x))}</span><span class="num">${x}</span>
-      <span class="tt" lang="${esc(tl)}">${esc(sceneTitle(x))}</span>
-      <span class="marks">${Work.sceneChanged(rec, x) ? `<span class="edited" title="${esc(T('changed'))}">✎</span>` : ''}${cc ? `<span class="cmc" title="${esc(T(cc === 1 ? 'cm1' : 'cmN', { n: cc }))}">${ICON_CM_S}${cc}</span>` : ''}</span></button>`;
-  }).join('')}</nav>`;
-  const mob = `<select class="scenesel" id="at" aria-label="${esc(T('scenes'))}">${story.map(s =>
-    `<option value="${s.number}" ${s.number === n ? 'selected' : ''}>${esc(T('sceneN', { n: s.number }))} · ${esc(sceneTitle(s.number))}${Work.sceneChanged(rec, s.number) ? ' ✎' : ''}</option>`).join('')}</select>`;
-  const seg = langs.length > 1 ? `<div class="seg" role="group" aria-label="${esc(T('showLang'))}">${langs.map(l =>
-    `<button lang="${esc(l)}" aria-pressed="${l === view}" data-act="view" data-k="${esc(l)}">${esc(langName(l, book.languageNames))}</button>`).join('')}
-    <button aria-pressed="${all}" data-act="view" data-k="all">${esc(T('allLangs'))}</button></div>` : '';
-  const block = l => `<div class="langblock" lang="${esc(l)}">${all ? `<div class="lname">${esc(langName(l, book.languageNames))}</div>` : ''}
-      ${markedHtml(rec, n, 'title', l)}<div class="story">${markedHtml(rec, n, 'text', l)}</div></div>`;
-  const nav = `<div class="spnav"><span>${n > 1 ? `<button class="btn bigbtn" data-act="scene" data-k="${n - 1}">${esc(T('prevScene', { n: n - 1 }))}</button>` : ''}</span>
-    <span>${n < m ? `<button class="btn primary bigbtn" data-act="scene" data-k="${n + 1}">${esc(T('nextScene', { n: n + 1 }))}</button>` : ''}</span></div>`;
-  // Comments: Edit and Delete for their own maker while the round is open (no replies, no Resolve: the author's next round answers).
+  // One line a scene, in view while you read; a phone shows "Scene 3".
+  const side = `<div class="side compact"><div class="eyebrow">${esc(T('scenes').toLocaleUpperCase(S.ui))}</div>${story.map(s => {
+    const x = s.number, cc = Work.sceneComments(rec, x).length, ch = Work.sceneChanged(rec, x);
+    return `<button class="item ${x === n ? 'on' : ''}" data-act="scene" data-k="${x}" ${x === n ? 'aria-current="true"' : ''} title="${esc(sceneTitle(x))}"><span class="t"><span class="t1"><b><span class="lbl">${esc(T('sceneN', { n: x }))}</span><span class="nonly">${x}</span></b><span class="ttl" lang="${esc(tl)}">${esc(sceneTitle(x))}</span></span></span>${ch ? `<span class="rtag mine" title="${esc(T('changed'))}">✎</span>` : ''}${cc ? `<span class="count" title="${esc(T(cc === 1 ? 'cm1' : 'cmN', { n: cc }))}">${cc}</span>` : ''}</button>`;
+  }).join('')}</div>`;
+  const pills = [...langs.map(l => ({ code: l, label: langLabel(l, names) })), ...(langs.length > 1 ? [{ code: 'all', label: T('allLangs') }] : [])]
+    .map(p => `<button class="pill" aria-pressed="${p.code === view}" data-act="view" data-k="${esc(p.code)}"${p.code === 'all' ? '' : ` lang="${esc(p.code)}" title="${esc(langName(p.code, names))}"`}>${esc(p.label)}</button>`).join('');
+  const blocks = shown.map(l => `<div class="block" lang="${esc(l)}">${all ? `<div class="lname">${esc(langName(l, names).toLocaleUpperCase(l))}</div><div class="btitle">${markedHtml(rec, n, 'title', l, 'span')}</div>` : ''}
+      ${markedHtml(rec, n, 'text', l)}</div>`).join('');
+  const heading = all ? esc(sceneTitle(n)) : markedHtml(rec, n, 'title', view, 'span');
+  const navBtn = (x, dir) => x >= 1 && x <= m ? `<button class="btn small" data-act="scene" data-k="${x}">${esc(T(dir < 0 ? 'prevScene' : 'nextScene', { n: x }))}</button>` : '<span></span>';
+  const nav = m > 1 ? `<div class="spnav">${navBtn(n - 1, -1)}${navBtn(n + 1, 1)}</div>` : '';
+  const hint = `<div class="hint">${locked ? `<span>${esc(T('lockedHint'))}</span>` : `${ICON_PEN}<span style="flex:1 1 220px">${esc(T('selHint'))}</span>`}${whoAmI()}</div>`;
+  const pane = `<div class="pane" id="pane"><div class="row" style="justify-content:space-between;align-items:flex-end;margin-bottom:18px">
+      <div style="display:flex;flex-direction:column;gap:4px;min-width:0"><span class="small muted" style="font-weight:700">${esc(T('sceneOf', { n, m }))}<span class="savest ${S.save === 'fail' ? 'bad' : ''}" id="savest" aria-live="polite">${esc(saveText())}</span></span>
+      <span class="heading" lang="${esc(tl)}" id="scenetitle">${heading}</span></div>
+      ${pills ? `<div class="pills" role="group" aria-label="${esc(T('showLang'))}">${pills}</div>` : ''}</div>
+    <div class="story" id="storytext">${blocks}</div>
+    ${hint}${nav}${S.pop?.n === n && shown.includes(S.pop.l) && !locked ? popHtml() : ''}</div>`;
+  // Comments: Edit and Remove for their own maker while the round is open (no replies, no Resolve: the author's next round answers).
   const own = by => !locked && Id.isOwn(by, S.me, OLD_NAME);
-  const card = c => `<div class="cm" id="cm-${esc(c.id)}"${hl(c.by)}><div class="cmmeta">${byLine(c.by, c.made, c.edited)}</div>
-      <div class="cmtop">${quoteChip(c)}${c.quote ? `<span class="cml">${esc(langName(c.lang, book.languageNames))}</span>` : ''}</div>
-      ${S.editC?.k === c.id ? `<label class="flbl" for="ced">${esc(T('edit'))}</label><textarea id="ced">${esc(S.editC.draft)}</textarea>
-        <div class="row"><button class="btn primary" data-act="edit-save">${esc(T('save'))}</button><button class="btn" data-act="edit-cancel">${esc(T('cancel'))}</button></div>` : `<p>${esc(c.text)}</p>`}
-      ${S.delC === c.id ? `<div class="row delask"><b>${esc(T('delC'))}</b><button class="btn danger-solid" data-act="del-c-yes" data-k="${esc(c.id)}">${esc(T('del'))}</button><button class="btn" data-act="del-c-no">${esc(T('keepIt'))}</button></div>`
+  const card = c => `<div class="note" id="cm-${esc(c.id)}"${hl(c.by)}><div class="head">${c.lang ? `<span class="chip">${esc(langLabel(c.lang, names))}</span>` : ''}${chip(c.by)}</div>
+      ${c.quote ? `<button class="quote" data-act="show-comment" data-k="${esc(c.id)}" lang="${esc(c.lang)}">${esc(c.quote)}</button>` : `<div class="quote">${esc(T('wholeScene'))}</div>`}
+      ${S.editC?.k === c.id ? `<textarea class="box" rows="3" id="ced" aria-label="${esc(T('edit'))}">${esc(S.editC.draft)}</textarea>
+        <div class="row" style="justify-content:flex-end"><button class="btn small" data-act="edit-cancel">${esc(T('cancel'))}</button><button class="btn small primary" data-act="edit-save">${esc(T('save'))}</button></div>`
+        : `<div style="font-size:15px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere">${esc(c.text)}</div>`}
+      <div class="tiny muted">${esc(when(c.made))}${c.edited ? ` · ${esc(T('editedT'))}` : ''}</div>
+      ${S.delC === c.id ? `<div class="row" style="justify-content:flex-end"><b class="small" style="flex:1 1 100%">${esc(T('delC'))}</b><button class="btn small" data-act="del-c-no">${esc(T('keepIt'))}</button><button class="btn small danger-solid" data-act="del-c-yes" data-k="${esc(c.id)}">${esc(T('del'))}</button></div>`
         : S.editC?.k === c.id || !own(c.by) ? ''
-        : `<div class="row cmacts"><button class="btn quiet" data-act="edit-c" data-k="${esc(c.id)}">${esc(T('edit'))}</button><button class="btn quiet del-c" data-act="del-comment" data-k="${esc(c.id)}">${esc(T('del'))}</button></div>`}</div>`;
+        : `<div class="row" style="justify-content:flex-end"><button class="btn small quiet" data-act="edit-c" data-k="${esc(c.id)}">${esc(T('edit'))}</button><button class="btn small quiet danger" data-act="del-comment" data-k="${esc(c.id)}">${esc(T('del'))}</button></div>`}</div>`;
   const notes = Work.sceneComments(rec, n).map(card).join('') + Work.sceneEdits(rec, n).map(e => editNote(rec, e, locked)).join('');
-  const hint = locked ? `<p class="selhint">${esc(T('lockedHint'))}</p>` : `<p class="selhint">${ICON_PEN}<span>${esc(T('selHint'))}</span></p>`;
-  return `<div class="three">${toc}
-    <section class="card scenecard">${mob}
-      <div class="scenehead"><span class="lbl">${esc(T('sceneOf', { n, m }))}</span><span class="savest ${S.save === 'fail' ? 'bad' : ''}" id="savest" aria-live="polite">${esc(saveText())}</span></div>
-      ${seg}${hint}
-      <div id="storytext">${shown.map(block).join('')}</div>${nav}${S.pop?.n === n && shown.includes(S.pop.l) && !locked ? popHtml() : ''}</section>
-    <aside class="cmside" aria-labelledby="cmh"><h3 class="lbl" id="cmh">${esc(T('notesOn'))}</h3>${notes || `<div class="emptyc">${esc(T('noComments'))}</div>`}</aside></div>`;
+  const aside = `<aside class="notes" aria-label="${esc(T('notesOn'))}"><div class="eyebrow">${esc(T('notesOn').toLocaleUpperCase(S.ui))}</div>
+      ${notes || `<div class="note muted small" style="border-style:dashed">${esc(T('noComments'))}</div>`}</aside>`;
+  return `${doneBar(rec)}<div class="cols">${side}${pane}${aside}</div>${nextBar(rec)}`;
 }
 
-// The Next round bar under the story (eBook Production's): what goes, + Note for this round (the whole story),
+// Sent back or approved: eBooks' done-bar (reopenBar) above the story, with Save the file again and Unlock.
+function doneBar(rec) {
+  if (!rec.sent) return '';
+  const fin = rec.sent.kind === 'final';
+  return `<div class="done-bar"><span class="tick">${ICON_TICK}</span><div class="grow" style="flex-basis:260px"><b>${esc(T(fin ? 'approvedBar' : 'sentBar', { n: fin ? rec.sent.round : rec.sent.round + 1, t: when(rec.sent.at) }))}</b>
+    <div class="small muted">${esc(T(fin ? 'approvedSub' : 'sentSub'))}</div></div>
+    <button class="btn small" data-act="save-again">${esc(T('saveAgain'))}</button><button class="btn small" data-act="unlock">${esc(T('unlock'))}</button></div>`;
+}
+// eBooks' Next round bar (nextRound, fold): what goes, + Note for this round (the whole story),
 // Send back for round n+1 (the author rewrites) or Approve story (final: kept as lessons, nothing rewritten).
 function nextBar(rec) {
-  const R = Work.round(rec);
-  if (rec.sent) {
-    const fin = rec.sent.kind === 'final';
-    return `<section class="nr done" aria-label="${esc(T('nextRound'))}"><span class="tick" aria-hidden="true">✓</span>
-      <div class="nr-t"><b>${esc(T(fin ? 'approvedBar' : 'sentBar', { n: fin ? rec.sent.round : rec.sent.round + 1, t: when(rec.sent.at) }))}</b>
-        <span class="muted">${esc(T(fin ? 'approvedSub' : 'sentSub'))}</span></div>
-      <div class="nr-b"><button class="btn" data-act="save-again">${esc(T('saveAgain'))}</button><button class="btn" data-act="unlock">${esc(T('unlock'))}</button></div></section>`;
-  }
-  const open = S.noteOpen[rec.id] || !!(rec.note || '').trim();
-  return `<section class="nr" aria-labelledby="nrh">
-    <div class="nr-foot"><div class="nr-a"><div class="nr-title"><b id="nrh">${esc(T('nextRound'))}</b><span class="muted" id="nrst">${esc(sendLine(rec))}</span></div>
-      ${open ? '' : `<button class="btn quiet" data-act="note-open">+ ${esc(T('noteRound'))}</button>`}</div>
+  if (rec.sent) return '';
+  const R = Work.round(rec), open = S.noteOpen[rec.id] || !!(rec.note || '').trim();
+  const box = open ? `<label class="field small">${esc(T('noteRound'))}<textarea class="box" id="rnote" rows="2" placeholder="${esc(T('notePh'))}">${esc(rec.note || '')}</textarea></label>` : '';
+  return `<section class="next nr fold" aria-label="${esc(T('nextRound'))}">
+    <div class="nr-foot"><div class="nr-a"><div class="nr-title"><b>${esc(T('nextRound'))}</b><span class="muted" id="nrst">${esc(sendLine(rec))}</span></div>
+      ${open ? '' : `<button class="btn small quiet" data-act="note-open">+ ${esc(T('noteRound'))}</button>`}</div><div class="grow"></div>
       <div class="nr-b"><button class="btn" data-act="ask-send" data-k="rewrite" id="sendbtn" ${countText(Work.counts(rec)) ? '' : 'disabled'}>${esc(T('sendRound', { n: R + 1 }))}</button>
-        <button class="btn primary" data-act="ask-send" data-k="final">${esc(T('approve'))}</button></div></div>
-    ${open ? `<label class="flbl" for="rnote">${esc(T('noteRound'))}</label><textarea id="rnote" rows="2" placeholder="${esc(T('notePh'))}">${esc(rec.note || '')}</textarea>` : ''}
-  </section>`;
+        <button class="btn primary" data-act="ask-send" data-k="final">${esc(T('approve'))}</button></div></div>${box}</section>`;
 }
 const sendLine = rec => { const w = countText(Work.counts(rec)); return w ? T('toSend', { what: w }) : T('nothingYet'); };
 // Typing the round note doesn't re-render (it would lose the caret): the counts follow in place.
 function liveCounts(rec) {
-  const w = countText(Work.counts(rec)), st = document.getElementById('nrst'), b = document.getElementById('sendbtn'), sub = document.getElementById('storysub');
+  const st = document.getElementById('nrst'), b = document.getElementById('sendbtn'), sub = document.getElementById('storysub');
   if (st) st.textContent = sendLine(rec);
-  if (b) b.disabled = !w;
-  if (sub) sub.textContent = w || T('storySub');
-  const box = document.getElementById('stbox');
-  if (box && !rec.sent) box.outerHTML = statusBox(rec);
+  if (b) b.disabled = !countText(Work.counts(rec));
+  if (sub) sub.textContent = storySub(rec);
 }
 // Send back / Approve story: a file is saved on this device; the reader sends it to the author (email, chat).
 function sendSheet() {
@@ -657,7 +650,7 @@ function render() {
   const f = document.activeElement, keep = f?.id && app.contains(f)
     ? { id: f.id, s: f.selectionStart, e: f.selectionEnd, d: f.selectionDirection, top: f.scrollTop } : null;
   app.classList.toggle('selecting', S.selecting && r.view === 'shelf');
-  app.innerHTML = header() + main + actBar() + shelfSheet() + sendSheet() + nameSheet() + langSheet();
+  app.innerHTML = (r.view === 'book' ? '' : header()) + main + actBar() + shelfSheet() + sendSheet() + nameSheet() + langSheet();
   const el = keep && document.getElementById(keep.id);
   if (el) {
     el.focus({ preventScroll: true });
@@ -755,13 +748,13 @@ function storyClick(a, k) {
     const e = (rec.edits || []).find(x => x.id === k);
     if (!e) return;
     if (!shownLangs(rec).includes(e.lang)) { S.view[id] = e.lang; render(); }
-    return flash(document.querySelector(`#storytext mark[data-e="${CSS.escape(e.id)}"]`));
+    return flash(document.querySelector(`#pane mark[data-e="${CSS.escape(e.id)}"]`));
   }
   if (a === 'show-comment') {
     const c = (rec.comments || []).find(x => x.id === k);
     if (!c) return;
     if (!shownLangs(rec).includes(c.lang)) { S.view[id] = c.lang; render(); }
-    return flash(document.querySelector(`#storytext mark[data-c="${CSS.escape(c.id)}"]`));
+    return flash(document.querySelector(`#pane mark[data-c="${CSS.escape(c.id)}"]`));
   }
   // The round: Send back / Approve story make the file; Unlock opens the story again.
   if (a === 'ask-send') { S.sendAsk = k === 'final' ? 'final' : 'rewrite'; render(); return document.querySelector('[data-act="send-yes"]')?.focus(); }
@@ -840,7 +833,7 @@ function onSelect(focus) {
   if (r.view !== 'book' || r.tab !== 'story' || !S.mine?.rec || S.mine.rec.sent || S.composing || S.nameSheet || S.sendAsk) return;
   const sel = getSelection();
   if (!sel || sel.isCollapsed || !sel.rangeCount) return;
-  const range = sel.getRangeAt(0), box = document.getElementById('storytext');
+  const range = sel.getRangeAt(0), box = document.getElementById('pane');
   const para = node => (node?.nodeType === 1 ? node : node?.parentElement)?.closest('[data-para]');
   const pa = para(range.startContainer), pb = para(range.endContainer);
   if (!pa || !pb || !box?.contains(pa) || !box.contains(pb) || pa.dataset.l !== pb.dataset.l || pa.dataset.f !== pb.dataset.f) return;
@@ -852,11 +845,11 @@ function onSelect(focus) {
   if (end <= start) return;
   const P = S.pop;
   if (P && P.n === n && P.f === f && P.l === l && P.start === start && P.end === end) { if (focus) focusDraft(); return; }
-  const card = document.querySelector('.scenecard')?.getBoundingClientRect(), rect = range.getBoundingClientRect();
-  if (!card) return;
-  S.pop = { n, f, l, start, end, quote: text.slice(start, end), draft: P?.draft || '', top: Math.round(rect.bottom - card.top + 10) };
+  const pane = box.getBoundingClientRect(), rect = range.getBoundingClientRect();
+  S.pop = { n, f, l, start, end, quote: text.slice(start, end), draft: P?.draft || '', top: Math.round(rect.bottom - pane.top + 8),
+    left: Math.round(Math.max(12, Math.min(rect.left - pane.left, pane.width - 352))) };
   const old = document.getElementById('pop');
-  if (old) old.outerHTML = popHtml(); else document.querySelector('.scenecard').insertAdjacentHTML('beforeend', popHtml());
+  if (old) old.outerHTML = popHtml(); else box.insertAdjacentHTML('beforeend', popHtml());
   if (focus) focusDraft();
 }
 function focusDraft() {
@@ -866,7 +859,7 @@ function focusDraft() {
 }
 // Mouse: at once, typing goes straight into the box. Touch (long-press, handles) and keyboard: after the selection settles,
 // without moving focus, so the selection stays adjustable.
-document.addEventListener('mouseup', e => { if (e.target.closest?.('#storytext')) setTimeout(() => onSelect(true), 0); });
+document.addEventListener('mouseup', e => { if (e.target.closest?.('#pane [data-para]')) setTimeout(() => onSelect(true), 0); });
 let selTimer;
 document.addEventListener('selectionchange', () => { clearTimeout(selTimer); selTimer = setTimeout(() => onSelect(false), 450); });
 document.addEventListener('keydown', e => {

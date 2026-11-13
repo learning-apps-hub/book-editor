@@ -113,98 +113,31 @@ button.bk { background: none; border: 0; padding: 0; text-align: left; font: inh
 .rcall.soft { background: var(--soft); border-color: var(--line); }
 .rcall.soft p { color: var(--ink); font-weight: 600; }
 
-/* ---- Story: Book Editor's old rules, kept until Story is redone to eBooks' markup (design brief step 1) ---- */
-/* Story: scene list | words | comments */
-.three { display: grid; grid-template-columns: 250px minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
-.toc { display: flex; flex-direction: column; gap: 4px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
-.toc .lbl { padding: 0 6px 6px; }
-.toc button { display: grid; grid-template-columns: 52px 22px minmax(0, 1fr) auto; gap: 8px; align-items: center; text-align: left; background: none; border: 2px solid transparent; border-radius: 12px; padding: 6px 8px; min-height: 56px; font-size: 16px; color: var(--muted); }
-.toc button[aria-current="true"] { background: var(--card); border-color: var(--green); color: var(--ink); font-weight: 800; }
-.toc .th { width: 52px; aspect-ratio: 4/3; border-radius: 6px; overflow: hidden; background: var(--soft); display: block; }
-.toc .th img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.toc .num { font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
-.toc .tt { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; font-family: var(--serif); line-height: 1.25; }
-.marks { flex-direction: column; align-items: flex-end; }
-.marks { display: inline-flex; gap: 4px; align-items: center; }
-.edited { font-size: 13px; font-weight: 800; color: var(--ins-d); background: var(--ins); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
-.edited[hidden] { display: none; }
-.cmc { display: inline-flex; align-items: center; gap: 2px; font-size: 13px; font-weight: 800; color: var(--ink); background: var(--amber); border-radius: 999px; padding: 2px 7px; }
-.scenesel { display: none; width: 100%; min-height: 56px; font-size: 18px; font-weight: 800; border: 2px solid var(--ink); border-radius: 12px; padding: 6px 12px; background: var(--card); }
-.scenehead { display: flex; flex-wrap: wrap; gap: 6px 12px; justify-content: space-between; align-items: center; }
-.savest { font-size: 15px; font-weight: 700; color: var(--green-d); }
-.savest.bad { color: var(--bad); }
-.seg { display: inline-flex; flex-wrap: wrap; background: var(--soft); border-radius: 16px; padding: 4px; gap: 4px; }
-.seg button { border: 0; background: none; min-height: 48px; padding: 4px 16px; border-radius: 12px; font-weight: 800; font-size: 17px; }
-.seg button[aria-pressed="true"] { background: var(--card); box-shadow: var(--shadow); color: var(--green-d); }
-.langblock { display: flex; flex-direction: column; gap: 6px; }
-.langblock + .langblock { border-top: 1px solid var(--line2); padding-top: 16px; }
-.lname { font-size: 19px; font-weight: 800; color: var(--green-d); }
-.flbl { font-size: 14px; font-weight: 800; color: var(--muted); }
-.btn.quiet { min-height: 44px; padding: 4px 14px; font-size: 15px; background: none; color: var(--green-d); border-color: var(--line); }
-#rnote:focus, #draft:focus, #ced:focus { border-color: var(--green); outline: none; box-shadow: 0 0 0 3px var(--green-l); }
-/* the story, shown once as page text: changed words in the changer's colour, commented words amber */
-.scenecard { position: relative; }
-#storytext { display: flex; flex-direction: column; gap: 16px; }
-#storytext p { margin: 0; font-family: var(--serif); white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
-#storytext .stitle { font-size: 24px; font-weight: 700; line-height: 1.35; margin-bottom: 4px; }
-#storytext .story p { font-size: 20px; line-height: 1.7; margin-bottom: 8px; }
-#storytext .story p.gap { height: .5em; margin: 0; }
-#storytext mark { color: inherit; border-radius: 3px; cursor: pointer; padding: 0; }
-#storytext mark.e { --c: var(--green); background: color-mix(in srgb, var(--c) 32%, transparent); border-bottom: 2px solid var(--c); }
-#storytext mark.c { background: var(--amber); border-bottom: 2px solid var(--amber-d); }
-#storytext mark.e.c { background: var(--amber); border-bottom: 3px solid var(--c); }
-.selhint { display: flex; gap: 8px; align-items: center; margin: 0; font-size: 15px; color: var(--muted); }
-.selhint svg { flex: none; color: var(--green-d); }
+/* ---- Story: eBooks' storyTab markup (ebooks.css .cols/.side/.pane/.notes/.note/.pop/.nr). Only Book Editor's additions here. ---- */
+.side.compact .nonly { display: inline; }
+.side .item { font: inherit; color: var(--ink); cursor: pointer; }
+.rtag.mine { background: var(--card); border-color: var(--line); color: var(--muted); }
+.savest { margin-left: 10px; font-weight: 600; color: var(--green-d); }
+.savest.bad { color: var(--red); }
+.heading [data-para], .btitle [data-para] { display: block; }
+#pane [data-para] { white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+/* changed words: in the colour of whoever changed them (reader identity); commented words: eBooks' amber */
+mark { cursor: pointer; }
+mark.e[style] { background: color-mix(in srgb, var(--c) 32%, transparent); border-bottom-color: var(--c); }
+mark.e.c { background: var(--amber); }
+.note[style] { border-left: 6px solid var(--c); }
+button.quote { text-align: left; border: 0; border-left: 3px solid var(--amber-d); color: var(--ink); cursor: pointer; overflow-wrap: anywhere; }
+.chnow { align-self: flex-start; text-align: left; border: 0; border-bottom: 2px solid var(--c, var(--muted)); border-radius: 4px; padding: 2px 6px;
+  font-family: var(--serif); font-size: 15px; line-height: 1.45; color: var(--ink); background: color-mix(in srgb, var(--c, var(--muted)) 25%, transparent); overflow-wrap: anywhere; cursor: pointer; }
+.note .head { flex-wrap: wrap; }
+.whoami { display: inline-flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.whoami .btn { min-height: 36px; padding: 4px 10px; }
+.hint { flex-wrap: wrap; }
 .flash { outline: 3px solid var(--green); outline-offset: 2px; transition: outline-color .3s; }
 mark.flash { outline-offset: 1px; }
-.pop { position: absolute; left: 50%; transform: translateX(-50%); z-index: 20; width: min(420px, calc(100% - 24px)); background: var(--card); border: 2px solid var(--ink);
-  border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.22); padding: 14px; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
-.pop .cmq { align-self: flex-start; max-height: 6.5em; overflow: auto; }
-.pop textarea { width: 100%; min-height: 96px; border: 2px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--card); font-size: 18px; }
-.pophelp { margin: 0; font-size: 14px; color: var(--muted); }
-.popacts { justify-content: flex-end; }
-.chn .chwas { font-family: var(--serif); font-size: 17px; line-height: 1.5; overflow-wrap: anywhere; }
-.chn .chwas del { text-decoration: line-through 2px; color: var(--bad); }
-.chnow { align-self: flex-start; text-align: left; border: 0; border-bottom: 2px solid var(--c, var(--green)); border-radius: 4px; padding: 2px 6px; min-height: 36px;
-  font-family: var(--serif); font-size: 17px; color: var(--ink); background: color-mix(in srgb, var(--c, var(--green)) 32%, transparent); overflow-wrap: anywhere; }
-.chn[style] { background: var(--card); border-left: 6px solid var(--c); }
-.spnav { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-.cmside { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.cmside h3 { margin: 0; }
-.cmq { font-family: var(--serif); font-style: italic; background: var(--amber); border-radius: 6px; padding: 2px 8px; border: 0; text-align: left; color: var(--ink); font-size: 16px; overflow-wrap: anywhere; }
-button.cmq { min-height: 36px; }
-.cmq.whole { font-family: var(--sans); font-style: normal; background: var(--soft); font-weight: 800; font-size: 14px; }
-.cm { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 16px; }
-.cm p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.cmtop { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.cml { font-size: 13px; color: var(--muted); font-weight: 700; }
-.cm .del-c { align-self: flex-end; color: var(--bad); }
-.delask { justify-content: flex-end; }
-.delask b { flex: 1 1 100%; }
-.emptyc { border: 2px dashed var(--line); border-radius: 14px; padding: 12px 14px; font-size: 15px; color: var(--muted); }
-.cmmeta { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; font-size: 14px; }
-.cmmeta b { font-size: 15px; }
-.cmmeta > span:not(.flbl) { color: var(--muted); }
-.cmacts { justify-content: flex-end; gap: 6px; }
-.cmacts .cml { flex: 1 1 100%; }
-.cm #ced { width: 100%; min-height: 80px; border: 2px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--card); font-size: 16px; }
-.whoami { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 15px; color: var(--muted); }
-.whoami .btn { min-height: 40px; }
-/* the round (eBook Production's Next round bar): what goes, + Note for this round, Send back / Approve story */
-.rtag { flex: none; align-self: center; padding: 2px 10px; border-radius: 999px; font-size: 14px; font-weight: 800; background: var(--card); border: 1.5px solid var(--line); color: var(--ink); }
-section.nr { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 20px; display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow); }
-.nr-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; justify-content: space-between; }
-.nr-a, .nr-b { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
-.nr-a .btn.quiet { padding-left: 0; border-color: transparent; }
-.nr-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: 16px; }
-.nr-title b { font-size: 18px; }
-.nr-b .btn { min-height: 52px; }
-#rnote { width: 100%; min-height: 64px; border: 2px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--card); font-size: 17px; }
-section.nr.done { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px 14px; background: var(--green-l); border-color: var(--green); }
-.nr.done .tick { width: 36px; height: 36px; border-radius: 50%; background: var(--green); color: var(--bg); display: grid; place-items: center; font-weight: 900; font-size: 20px; flex: none; }
-.nr-t { flex: 1 1 260px; display: flex; flex-direction: column; gap: 2px; }
-.nr-t b { font-size: 17px; }
-.nr-t .muted { font-size: 15px; }
+.pop .quote { max-height: 6.5em; overflow: auto; }
+@media (max-width: 720px) { .side.compact .nonly { display: none; } .pop { left: 12px !important; } }
+.flbl { font-size: 14px; font-weight: 800; color: var(--muted); }
 /* the reader's identity: avatar = picture on their colour (+ nickname); the colour is also their highlighter */
 .who { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; font-weight: 800; color: var(--ink); }
 .who b { font-size: 15px; overflow-wrap: anywhere; }
@@ -212,8 +145,6 @@ section.nr.done { flex-direction: row; flex-wrap: wrap; align-items: center; gap
   background: var(--c, var(--soft)); box-shadow: 0 0 0 2px var(--card); font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; }
 .av.plain { background: var(--soft); color: var(--muted); font-family: var(--sans); font-size: 15px; font-weight: 800; }
 .av.empty { background: var(--soft); color: var(--muted); border: 2px dashed var(--line); box-shadow: none; font-family: var(--sans); }
-.cmmeta { align-items: center; }
-.cm[style] { border-left: 6px solid var(--c); background: color-mix(in srgb, var(--c) 10%, var(--card)); }
 .sheetbox { overflow-y: auto; }
 .sheetbox.idbox { padding-top: max(12px, env(safe-area-inset-top, 0px)); }
 .idcard { gap: 8px; }
@@ -228,11 +159,6 @@ section.nr.done { flex-direction: row; flex-wrap: wrap; align-items: center; gap
 .colbtn[aria-pressed="true"]::after { content: '✓'; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 22px; font-weight: 900; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
 .nickin { width: 100%; min-height: 52px; border: 2px solid var(--line); border-radius: 12px; padding: 6px 12px; background: var(--card); font-size: 18px; }
 .nickin:focus { border-color: var(--green); outline: none; box-shadow: 0 0 0 3px var(--green-l); }
-@media (max-width: 1000px) {
-  .three { grid-template-columns: minmax(0, 1fr); }
-  .toc { display: none; }
-  .scenesel { display: block; }
-}
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 12px 18px; border-radius: 12px; font-weight: 700; width: max-content; max-width: calc(100% - 32px); box-shadow: var(--shadow); z-index: 40; }
 @media (max-width: 640px) {
   .rbook { grid-template-columns: minmax(0, 1fr); min-height: 0; }
@@ -245,12 +171,6 @@ section.nr.done { flex-direction: row; flex-wrap: wrap; align-items: center; gap
   .actbar .cnt { flex-basis: 100%; }
   .newf .btn { width: 100%; }
   #app.selecting ~ .toast { bottom: calc(184px + env(safe-area-inset-bottom, 0px)); }
-  .seg { display: flex; width: 100%; }
-  .seg button { flex: 1 1 auto; padding-inline: 10px; }
-  .nr-b { width: 100%; }
-  .nr-b .btn { flex: 1 1 auto; }
-  section.nr { padding: 12px 14px; }
-  .spnav .btn { padding-inline: 14px; font-size: 17px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 .movelist .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; }
