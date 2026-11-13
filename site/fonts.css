@@ -1,0 +1,4 @@
+/* Self-hosted fonts (SIL OFL, licences beside them), the faces eBook Production uses: Nunito (menus), Literata (story).
+   Noto Serif SC (14 MB) is not shipped yet (R2 delivery question open): Chinese falls back to the system serif. */
+@font-face { font-family: 'Nunito'; src: url('fonts/Nunito.woff2') format('woff2'); font-weight: 200 1000; font-display: swap; }
+@font-face { font-family: 'Literata'; src: url('fonts/Literata.woff2') format('woff2'); font-weight: 200 900; font-display: swap; }
