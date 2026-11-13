@@ -8,6 +8,7 @@ import { UI, langName } from './i18n.js';
 import * as Shelf from './shelf.js';
 import * as Work from './work.js';
 import * as Id from './identity.js';
+import * as Layout from './layout.js';
 
 // ---- Library location ----
 // The real Library sits at the app's own address under library/ (behind Cloudflare Access).
@@ -48,6 +49,7 @@ const S = {
   composing: false, renderLater: false,
   me: null, nameSheet: false, idDraft: null,                  // the reader's identity (identity.js) / the sheet choosing it
   editC: null,                                                 // { k: comment id, draft } comment being edited
+  layoutScene: {}, pvSize: 'large',                            // selected preview scene / Large or Small
 };
 S.me = Id.load(store);
 const OLD_NAME = store.get('be.name') || '';                   // a name typed before identities (2026-11-11)
@@ -443,6 +445,200 @@ const viewOf = (id, langs) => {
   return v === 'all' || langs.includes(v) ? v : langs.includes(S.ui) ? S.ui : langs[0];
 };
 
+// ---- Layout: eBook Production's Export-to card, settings grid, jump grid and real-page preview ----
+const PV = { host: null, key: '', data: null, overflow: [], scroll: 0, observer: null };
+const PV_CSS = `
+:host{display:block}.book{display:grid;grid-template-columns:repeat(var(--cols,1),max-content);gap:9mm;padding:6mm;zoom:var(--z,.3)}
+.sp{display:flex;flex-direction:column;gap:2mm;cursor:pointer}.cap{font:700 calc(13px/var(--z,.3)) Nunito,system-ui,sans-serif;color:#6B645A}
+.pair{display:flex;flex-wrap:wrap;gap:4mm;align-self:flex-start}.pg{flex:none;background:#fff;box-shadow:0 1mm 5mm rgba(0,0,0,.22)}
+.sp.on .pair{outline:calc(4px/var(--z,.3)) solid #2F6B5E;outline-offset:2mm}.sheetrow{display:flex;flex-direction:column;gap:2mm}
+.sheet{display:flex;position:relative;align-self:flex-start;background:#fff;box-shadow:0 1mm 5mm rgba(0,0,0,.22)}.sheet .pg{box-shadow:none}
+.sheet::after{content:"";position:absolute;left:50%;top:0;bottom:0;border-left:.5mm dashed rgba(0,0,0,.3);pointer-events:none}
+.half{position:relative}.half.on{outline:calc(4px/var(--z,.3)) solid #2F6B5E;outline-offset:-1mm;z-index:1}.body.over{outline:calc(2px/var(--z,.3)) dashed #9B2C2C}
+.pv-msg{padding:24px;font:15px Nunito,system-ui,sans-serif;color:#6B645A}`;
+
+const layoutTarget = rec => rec.layout?.target && Layout.TARGETS.some(([k]) => k === rec.layout.target) ? rec.layout.target : 'a5';
+const targetName = target => T((Layout.TARGETS.find(([k]) => k === target) || [])[1] || target);
+function layoutSettings(rec, target = layoutTarget(rec)) {
+  const baseTarget = target === 'changes' ? 'custom' : target;
+  return Layout.normaliseSettings(rec.book, baseTarget, rec.layout?.settings?.[target]);
+}
+function setLayout(rec, target, settings) {
+  rec.layout = rec.layout || { target: 'a5', settings: {} };
+  rec.layout.target = target;
+  rec.layout.settings = { ...(rec.layout.settings || {}), ...(settings ? { [target]: settings } : {}) };
+  queueSave();
+}
+function patchLayout(rec, patch) {
+  const target = layoutTarget(rec), next = Layout.normaliseSettings(rec.book, target === 'changes' ? 'custom' : target,
+    Layout.mergePatch(layoutSettings(rec, target), patch));
+  setLayout(rec, target, next); render();
+}
+function layoutData(rec) {
+  const settings = layoutSettings(rec);
+  const story = rec.story.map(s => ({ number: s.number,
+    title: Object.fromEntries(rec.book.languages.map(l => [l, Work.value(rec, s.number, 'title', l)])),
+    text: Object.fromEntries(rec.book.languages.map(l => [l, Work.value(rec, s.number, 'text', l)])) }));
+  const languageMeta = Object.fromEntries(rec.book.languages.map(l => [l, langName(l, rec.book.languageNames)]));
+  return Layout.buildLayout({ book: rec.book, story, settings, urls: S.mine?.urls || {}, languageMeta });
+}
+const layRow = (label, control) => `<div class="sl">${esc(label)}</div><div class="sc">${control}</div>`;
+function laySeg(options, current, aria) {
+  return `<span class="seg" role="group" aria-label="${esc(aria)}">${options.map(([key, label, patch]) =>
+    `<button aria-pressed="${key === current}" data-act="lay-pick" data-patch="${esc(JSON.stringify(patch))}">${esc(label)}</button>`).join('')}</span>`;
+}
+const sizeSlider = (key, value) => { const pc = Math.round((value ?? 1) * 100);
+  return `<span class="psize"><input type="range" min="50" max="100" step="1" value="${pc}" data-lay-size="${key}" aria-label="${esc(T(key === 'book' ? 'pictureSize' : 'scenePictureSize', { n: key }))}"><output>${pc}%</output></span>`; };
+
+function layoutSettingsPanel(rec, target, st) {
+  if (target === 'changes') return '';
+  const show = target === 'tv' ? ['languages', 'language_pages', 'body', 'main', 'covers']
+    : target === 'a5' ? ['languages', 'language_pages', 'body', 'main', 'small', 'covers']
+    : ['page', 'arrangement', 'languages', 'language_pages', 'body', 'main', 'small', 'covers'];
+  const rows = [], langs = st.languages, n = langs.length, max = target === 'a5' ? 3 : Infinity;
+  if (show.includes('page')) {
+    const choices = st.arrangement === 'booklet' ? Layout.SHEET_CHOICES : Layout.PAGE_CHOICES;
+    rows.push(layRow(T('paperSize'), `<select class="box" data-lay-page>${choices.map(([k, label, w, h]) =>
+      `<option value="${w},${h}" ${w === st.page.w && h === st.page.h ? 'selected' : ''}>${esc(T('page_' + k) === 'page_' + k ? label : T('page_' + k))}${st.arrangement === 'booklet' ? ` (${esc(T('folded'))})` : ''}</option>`).join('')}</select>`));
+  }
+  if (show.includes('arrangement')) {
+    const key = st.arrangement === 'one_page' ? `one_page_${st.picture_width}` : st.arrangement;
+    const options = [['facing', 'arrFacing'], ['picture_page', 'arrPicture'], ['one_page_half', 'arrHalf'], ['one_page_fit', 'arrFull'], ['booklet', 'arrBooklet']];
+    rows.push(layRow(T('pageLayout'), `<select class="box" data-lay-arr>${options.map(([k, label]) => `<option value="${k}" ${k === key ? 'selected' : ''}>${esc(T(label))}</option>`).join('')}</select>`));
+  }
+  rows.push(layRow(T('languages'), `<span class="lchips">${rec.book.languages.map(l => { const on = langs.includes(l);
+    return `<button class="tchip" aria-pressed="${on}" data-act="lay-lang" data-code="${esc(l)}" ${!on && n >= max ? `disabled title="${esc(T('upToN', { n: max }))}"` : ''}>${on ? '✓ ' : ''}${esc(langName(l, rec.book.languageNames))}</button>`; }).join('')}</span>`));
+  if (show.includes('language_pages') && n > 1) rows.push(layRow(T('languagesPage'), laySeg([
+    ['together', T('sideBySide'), { language_pages: 'together' }],
+    ['separate', target === 'tv' ? T('oneSlide') : T('onePage'), { language_pages: 'separate' }],
+  ], st.language_pages, T('languagesPage'))));
+  rows.push(layRow(T('textSize'), `<select class="box narrow" data-lay-body>${Layout.BODY_SIZES.map(x => `<option value="${x}" ${x === st.body_pt ? 'selected' : ''}>${x} pt</option>`).join('')}</select>`));
+  const mainOptions = [];
+  if (rec.book.pictures?.colour) mainOptions.push(['colour', T('colour'), { pictures: { main: 'colour' } }]);
+  if (rec.book.pictures?.colouring) mainOptions.push(['colouring', T('colouring'), { pictures: { main: 'colouring' } }]);
+  mainOptions.push(['none', T('none'), { pictures: { main: 'none' } }]);
+  let pictureControl = laySeg(mainOptions, st.pictures.main, T('pictures'));
+  if (show.includes('small') && rec.book.pictures?.small) pictureControl += `<span class="sub">${esc(T('small'))} ${laySeg([
+    ['small', T('on'), { pictures: { small: 'small' } }], ['none', T('off'), { pictures: { small: 'none' } }],
+  ], st.pictures.small, T('smallPictures'))}</span>`;
+  rows.push(layRow(T('pictures'), pictureControl));
+  if (st.arrangement === 'one_page' && st.pictures.main !== 'none') {
+    const own = Object.keys(st.picture_sizes || {}).length;
+    rows.push(layRow(T('pictureSize'), `${sizeSlider('book', st.picture_size)}${own ? `<span class="sub tiny muted">${esc(T('ownSizes', { n: own }))} <button class="linkbtn" data-act="lay-pick" data-patch="${esc(JSON.stringify({ picture_sizes: null }))}">${esc(T('useAll'))}</button></span>` : ''}`));
+  }
+  const covers = [];
+  for (const which of ['front', 'back']) {
+    const hasLine = !!rec.book.pictures?.lineart?.[which];
+    const label = T(which === 'front' ? 'front' : 'back');
+    const control = hasLine ? laySeg([['colour', T('colour'), { covers: { [which]: 'colour' } }], ['line', T('lineArt'), { covers: { [which]: 'line' } }]], st.covers[which], label) : `<span>${esc(T('colour'))}</span>`;
+    covers.push(`<span class="sub">${esc(label)} ${control}</span>`);
+  }
+  rows.push(layRow(T('covers'), covers.join('')));
+  return `<div class="setpanel"><div class="seth">${esc(T('layoutSettings'))}</div><div class="setgrid">${rows.join('')}</div></div>`;
+}
+
+function layoutNote(target) {
+  return target === 'tv' ? T('noteTv') : target === 'a5' ? T('noteA5') : target === 'changes' ? T('noteChanges') : T('noteCustom');
+}
+function overflowMap() {
+  const out = {};
+  if (PV.key && PV.overflow) for (const x of PV.overflow) (out[x.spread] ||= []).push(x.lang);
+  return out;
+}
+function layoutView(rec) {
+  const target = layoutTarget(rec), st = layoutSettings(rec, target), data = layoutData(rec), over = overflowMap();
+  const selected = S.layoutScene[rec.id] ?? 0;
+  const missing = Object.fromEntries(data.missingTitles.map(x => [x.spread, x.languages]));
+  const options = Layout.TARGETS.map(([k, key]) => `<option value="${k}" ${k === target ? 'selected' : ''}>${esc(T(key))}</option>`).join('');
+  const exportLabel = target === 'changes' ? T('sendBack') : T('exportA');
+  const card = `<section class="card xcard"><div class="xrow"><label class="xto"><span>${esc(T('exportTo'))}</span><select class="box" id="xt">${options}</select></label>
+    <button class="btn primary" data-act="layout-export">${esc(exportLabel)}</button></div><div class="xnote" role="note"><span class="xi" aria-hidden="true">i</span><div>${esc(layoutNote(target))}</div></div>
+    ${layoutSettingsPanel(rec, target, st)}</section>`;
+  const jump = `<div class="side"><div class="eyebrow">${esc(T('jumpTo').toLocaleUpperCase(S.ui))}</div><div class="spreadgrid" id="pv-jump">
+    <button class="sq picked ${selected === 0 ? 'on' : ''}" data-act="layout-page" data-k="0" aria-label="${esc(T('cover'))}">C</button>${rec.story.map(s => {
+      const bad = over[s.number]?.length || missing[s.number]?.length;
+      return `<button class="sq ${bad ? 'ready' : 'picked'} ${selected === s.number ? 'on' : ''}" data-act="layout-page" data-k="${s.number}" aria-label="${esc(T('sceneN', { n: s.number }))}">${s.number}</button>`; }).join('')}</div>
+    <div class="legend"><span class="lp">${esc(T('fits'))}</span><span class="lr">${esc(T('runsOver'))}</span></div></div>`;
+  const sizes = [['large', 'previewLarge'], ['small', 'previewSmall']].map(([k, label]) => `<button class="pill" aria-pressed="${S.pvSize === k}" data-act="pv-size" data-k="${k}">${esc(T(label))}</button>`).join('');
+  let about = '';
+  if (selected > 0) {
+    const names = (over[selected] || []).map(l => langName(l, rec.book.languageNames));
+    const untitled = (missing[selected] || []).map(l => langName(l, rec.book.languageNames));
+    if (names.length) about += `<div class="warn" style="margin-top:12px"><b>${esc(T('pageFull', { n: selected }))}</b><div class="small">${esc(T('pageFullHelp', { languages: names.join(', ') }))}</div></div>`;
+    if (untitled.length) about += `<div class="warn" style="margin-top:12px"><b>${esc(T('titleMissing', { n: selected }))}</b><div class="small">${esc(T('titleMissingHelp', { languages: untitled.join(', ') }))}</div></div>`;
+    if (st.arrangement === 'one_page' && st.pictures.main !== 'none') {
+      const own = st.picture_sizes?.[selected];
+      about += `<div class="psrow"><span class="small" style="font-weight:700">${esc(T('scenePictureSize', { n: selected }))}</span>${sizeSlider(selected, own ?? st.picture_size)}
+        ${own != null ? `<button class="linkbtn" data-act="lay-scene-reset" data-k="${selected}">${esc(T('useBookSize'))}</button>` : `<span class="tiny muted">${esc(T('sameBook'))}</span>`}</div>`;
+    }
+  }
+  const pane = `<div class="pane"><div class="row" style="margin-bottom:6px"><b style="font-size:17px">${esc(T('preview'))}</b><span class="tiny muted">· ${esc(targetName(target))}</span><div class="grow"></div><div class="pills" role="group" aria-label="${esc(T('previewSize'))}">${sizes}</div></div>
+    <div id="pv-slot"></div>${about}</div>`;
+  return `${card}<div class="cols">${jump}${pane}</div>`;
+}
+
+function pageCaption(p) {
+  if (p.kind === 'cover') return T('cover');
+  if (p.kind === 'back') return T('backCover');
+  if (p.spread > 0) return `${T('sceneN', { n: p.spread })} · ${T('pageN', { n: p.no })}`;
+  return T('pageN', { n: p.no });
+}
+function previewMarkup(data) {
+  if (data.sheets) {
+    const half = i => i == null ? '<div class="half"><div class="pg"></div></div>' : `<div class="half" data-spread="${data.pages[i].spread}">${data.pages[i].html}</div>`;
+    return `<div class="book">${data.sheets.map((pair, i) => `<section class="sheetrow"><div class="cap">${esc(T('sheetSide', { sheet: Math.floor(i / 2) + 1, side: i % 2 + 1 }))}</div><div class="sheet">${half(pair[0])}${half(pair[1])}</div></section>`).join('')}</div>`;
+  }
+  const rows = [];
+  for (const p of data.pages) {
+    const last = rows.at(-1);
+    if (last && last.spread === p.spread && !['cover', 'back'].includes(p.kind)) last.pages.push(p);
+    else rows.push({ spread: p.spread, pages: [p] });
+  }
+  return `<div class="book">${rows.map(r => `<section class="sp" data-spread="${r.spread}"><div class="cap">${esc(pageCaption(r.pages[0]))}</div><div class="pair">${r.pages.map(p => p.html).join('')}</div></section>`).join('')}</div>`;
+}
+function fitLayoutPreview() {
+  const book = PV.host?.shadowRoot.querySelector('.book');
+  if (!book || !PV.data) return;
+  const small = S.pvSize === 'small', sheets = !!PV.data.sheets, cols = small ? (sheets ? 2 : 3) : 1;
+  const unit = (sheets ? 2 : 2) * PV.data.widthMm + (sheets ? 0 : 4);
+  const pairPx = (cols * unit + 12 + (cols - 1) * 9) * 96 / 25.4;
+  book.style.setProperty('--cols', cols); book.style.setProperty('--z', Math.max(.05, Math.min(1, (PV.host.clientWidth - 18) / pairPx)).toFixed(4));
+  markLayoutPreview();
+}
+function markLayoutPreview() {
+  const root = PV.host?.shadowRoot, selected = S.mine?.rec ? (S.layoutScene[S.mine.rec.id] ?? 0) : 0;
+  if (!root) return;
+  root.querySelectorAll('[data-spread]').forEach(el => el.classList.toggle('on', +el.dataset.spread === selected));
+  root.querySelectorAll('.body').forEach(el => el.classList.toggle('over', PV.overflow.some(x => x.spread === +el.dataset.spread && x.lang === el.dataset.lang)));
+}
+function measureLayoutPreview(key) {
+  const root = PV.host?.shadowRoot;
+  if (!root || PV.key !== key) return;
+  const next = [...root.querySelectorAll('.body')].filter(el => el.querySelector('.flow')?.scrollHeight > el.clientHeight + 1)
+    .map(el => ({ spread: +el.dataset.spread, lang: el.dataset.lang }));
+  const changed = JSON.stringify(next) !== JSON.stringify(PV.overflow);
+  PV.overflow = next; markLayoutPreview();
+  if (changed) render();
+}
+function mountLayoutPreview() {
+  const slot = document.getElementById('pv-slot'), rec = S.mine?.rec;
+  if (!slot || !rec || S.route.tab !== 'layout') return;
+  const data = layoutData(rec), target = layoutTarget(rec), key = JSON.stringify([rec.id, target, layoutSettings(rec), rec.edits || []]);
+  if (!PV.host) {
+    PV.host = document.createElement('div'); PV.host.className = 'pvhost'; PV.host.attachShadow({ mode: 'open' });
+    PV.host.addEventListener('scroll', () => { PV.scroll = PV.host.scrollTop; });
+    PV.host.addEventListener('click', e => { const x = e.composedPath().find(n => n.dataset?.spread); if (!x || +x.dataset.spread < 0) return;
+      S.layoutScene[rec.id] = +x.dataset.spread; render(); });
+    PV.observer = new ResizeObserver(fitLayoutPreview); PV.observer.observe(PV.host);
+  }
+  slot.appendChild(PV.host); PV.host.scrollTop = PV.scroll;
+  if (PV.key !== key) {
+    PV.key = key; PV.data = data; PV.overflow = [];
+    PV.host.shadowRoot.innerHTML = `<style>${data.css}\n${PV_CSS}</style>${previewMarkup(data)}`;
+    document.fonts.ready.then(() => requestAnimationFrame(() => { fitLayoutPreview(); measureLayoutPreview(key); }));
+  } else { PV.data = data; fitLayoutPreview(); markLayoutPreview(); }
+}
+
 // ---- The book: eBook Production's renderBook (header with the book's picker pill, nav.steps, the tab) ----
 function bookScreen() {
   const { id } = S.route, M = S.mine, back = `<div class="row"><button class="btn" data-act="go" data-k="shelf">${esc(T('backShelf'))}</button></div>`;
@@ -452,7 +648,7 @@ function bookScreen() {
   const step = (key, num, state, sub, subId) => `<button class="step ${state}${S.route.tab === key ? ' on' : ''}" role="tab" aria-selected="${S.route.tab === key}" data-act="tab" data-k="${key}">
       <span class="num">${num}</span><span class="lbl"><b>${esc(T(key))}</b><span class="sub"${subId ? ` id="${subId}"` : ''}>${esc(sub)}</span></span></button>`;
   const nav = `<nav class="steps" role="tablist">${step('story', sent ? '✓' : '1', sent ? 'done' : 'yours', storySub(rec), 'storysub')}${step('layout', '2', '', T('layoutSub'))}</nav>`;
-  return header(rec) + nav + (story ? storyView(rec) : `<section class="next"><div class="waiting"><span class="tick">${ICON_EYE}</span><span class="muted">${esc(T('layoutSoon'))}</span></div></section>`);
+  return header(rec) + nav + (story ? storyView(rec) : layoutView(rec));
 }
 // The Story step's line: sent / approved, else the round and what is waiting to go.
 const storySub = rec => rec.sent ? sentText(rec.sent) : [T('roundN', { n: Work.round(rec) }), countText(Work.counts(rec)) || T('storySub')].join(' · ');
@@ -625,7 +821,8 @@ function flushSave() {
   const M = S.mine;
   if (!M?.rec || !S.dirty) return;
   S.dirty = false;
-  const { id, rec } = M, work = structuredClone({ edits: rec.edits || [], comments: rec.comments || [], note: rec.note || '', sent: rec.sent || null });
+  const { id, rec } = M, work = structuredClone({ edits: rec.edits || [], comments: rec.comments || [], note: rec.note || '', sent: rec.sent || null,
+    layout: rec.layout || { target: 'a5', settings: {} } });
   Shelf.saveWork(id, work).then(changed => {
     const b = S.shelf?.find(x => x.id === id);
     if (b) { Object.assign(b, work, { changed }); delete b.editBy; if (!work.sent) delete b.sent; }
@@ -657,6 +854,7 @@ function render() {
     if (typeof keep.s === 'number' && el.setSelectionRange) try { el.setSelectionRange(keep.s, keep.e, keep.d || 'none'); } catch { /* not a text box */ }
     el.scrollTop = keep.top;
   }
+  if (r.view === 'book' && r.tab === 'layout') mountLayoutPreview();
 }
 let toastTimer;
 function toast(m) {
@@ -724,8 +922,31 @@ document.addEventListener('click', e => {
   if (a === 'move-to') return moveTo(k);
   if (a === 'create-folder') return createFolder();
   if (a === 'del-yes') return deletePicked();
+  if (S.route.view === 'book' && S.route.tab === 'layout' && layoutClick(a, k, b)) return;
   return storyClick(a, k);
 });
+
+function layoutClick(a, k, button) {
+  const rec = S.mine?.rec;
+  if (!rec) return false;
+  if (a === 'layout-page') {
+    S.layoutScene[rec.id] = +k; render();
+    requestAnimationFrame(() => PV.host?.shadowRoot.querySelector(`[data-spread="${+k}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+    return true;
+  }
+  if (a === 'pv-size') { S.pvSize = k === 'small' ? 'small' : 'large'; render(); return true; }
+  if (a === 'lay-pick') { try { patchLayout(rec, JSON.parse(button.dataset.patch || '{}')); } catch { /* a malformed UI patch is ignored */ } return true; }
+  if (a === 'lay-lang') {
+    const st = layoutSettings(rec), code = button.dataset.code, on = st.languages.includes(code), max = layoutTarget(rec) === 'a5' ? 3 : Infinity;
+    if (on && st.languages.length === 1) { toast(T('oneLanguage')); return true; }
+    if (!on && st.languages.length >= max) return true;
+    st.languages = on ? st.languages.filter(x => x !== code) : [...st.languages, code];
+    setLayout(rec, layoutTarget(rec), st); render(); return true;
+  }
+  if (a === 'lay-scene-reset') { patchLayout(rec, { picture_sizes: { [k]: null } }); return true; }
+  if (a === 'layout-export') { toast(T(layoutTarget(rec) === 'changes' ? 'layoutSendSoon' : 'layoutExportSoon')); return true; }
+  return false;
+}
 
 // ---- Story actions ----
 function storyClick(a, k) {
@@ -882,12 +1103,27 @@ window.addEventListener('hashchange', onRoute);
 // Typing in a comment, reply or pop-up box: keep the draft (a re-render puts it back).
 document.addEventListener('input', e => {
   const el = e.target;
+  if (el.matches('[data-lay-size]')) { const out = el.parentElement?.querySelector('output'); if (out) out.textContent = `${el.value}%`; return; }
   if (el.id === 'rnote' && S.mine?.rec && !S.mine.rec.sent) { S.mine.rec.note = el.value; queueSave(); return liveCounts(S.mine.rec); }
   if (el.id === 'ced' && S.editC) { S.editC.draft = el.value; return; }
   if (el.id === 'nm' && S.idDraft) { S.idDraft.nick = el.value; return; }
   if (el.id === 'draft' && S.pop) { S.pop.draft = el.value; return; }
 });
 document.addEventListener('change', e => {
+  const rec = S.mine?.rec, el = e.target;
+  if (rec && S.route.tab === 'layout') {
+    if (el.id === 'xt') { const target = Layout.TARGETS.some(([k]) => k === el.value) ? el.value : 'a5'; setLayout(rec, target, layoutSettings(rec, target)); render(); return; }
+    if (el.matches('[data-lay-page]')) { const [w, h] = el.value.split(',').map(Number); patchLayout(rec, { page: { w, h } }); return; }
+    if (el.matches('[data-lay-body]')) { patchLayout(rec, { body_pt: +el.value }); return; }
+    if (el.matches('[data-lay-arr]')) {
+      const v = el.value, one = v.startsWith('one_page_');
+      patchLayout(rec, one ? { arrangement: 'one_page', picture_width: v.slice(9) } : { arrangement: v }); return;
+    }
+    if (el.matches('[data-lay-size]')) {
+      const key = el.dataset.laySize, value = +el.value / 100;
+      patchLayout(rec, key === 'book' ? { picture_size: value } : { picture_sizes: { [key]: value } }); return;
+    }
+  }
   if (e.target.id === 'home-sort') { S.home.sort = e.target.value; store.set('be.home', JSON.stringify(S.home)); render(); return document.getElementById('home-sort')?.focus(); }
   if (e.target.id === 'at' && S.mine?.rec) go(bookHash(S.mine.rec.id, +e.target.value), true);
 });
