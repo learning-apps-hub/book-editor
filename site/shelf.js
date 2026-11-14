@@ -112,7 +112,7 @@ export async function markOpened(id) {
 }
 
 /**
- * Save the reader's edits, comments, round note and sent state onto the book record (see work.js).
+ * Save the reader's edits, comments, round note, sent state and per-book layout onto the book record.
  * Saves run one after another, so an older save can never land after a newer one.
  */
 let saving = Promise.resolve();
@@ -122,8 +122,8 @@ export function saveWork(id, work) {
     const rec = await asPromise(s.get(id));
     if (!rec) throw Object.assign(new Error('book gone'), { name: 'NotFoundError' });
     const changed = new Date().toISOString();
-    const { edits, comments, note, sent } = work;
-    Object.assign(rec, { edits, comments, note, sent, changed });
+    const { edits, comments, note, sent, layout } = work;
+    Object.assign(rec, { edits, comments, note, sent, layout, changed });
     delete rec.editBy;                       // the old field-level "who changed it" (work.js migrate)
     if (!sent) delete rec.sent;
     s.put(rec);
