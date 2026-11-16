@@ -146,7 +146,7 @@ Editor (a picture, a colour and an optional nickname, stored only on their devic
     { "spread": 1, "lang": "en", "quote": "dark wood", "position": 31, "text": "Too scary for little ones?",
       "by": { "id": "7c1e…", "symbol": "🦊", "colour": "#F08C2E", "nick": "Ana" }, "made": "2026-11-06T09:14:00Z", "edited": "2026-11-06T09:16:10Z" }
   ],
-  "layout": { "target": "a5-booklet", "settings": { } }
+  "layout": { "target": "a5", "settings": { "languages": ["en", "zh", "pl"], "body_pt": 12, "arrangement": "booklet" } }
 }
 ```
 
@@ -165,7 +165,7 @@ Editor (a picture, a colour and an optional nickname, stored only on their devic
 | `comments[].by`, `made`, `edited` | the comment's author, when it was made, and when its words were last edited (absent if never). |
 | `comments[].replies`, `comments[].resolved` | no longer written since 2026-11-12 (rounds replace them: the author's next version answers). Files made before may carry them: `replies` = `[{ text, by, made, edited? }]`, `resolved` = `{ by, at }`. |
 | `comments` | **on selected words**: `spread`, `lang`, `quote` (the exact selected words), `position` (character index where `quote` starts in that scene's `text` in that language, counted on the reader's version, i.e. after the reader's own change if there is one), `text`. Comments on selected words are on the scene text, not the title. Files made before 2026-11-12 may also hold whole-scene comments (`spread`, `text` only); the whole story's note is now `note`. |
-| `layout` | optional: the export target and settings the reader last picked. The author app may ignore it. |
+| `layout` | optional: the printed look the reader last picked (written since v0.6.0). `target` = `"tv"` (16:9), `"a5"` (A5 booklet) or `"custom"`; `settings` = that target's Layout settings as Book Editor stores them (`languages`, `language_pages`, `body_pt`, `pictures`, `covers`, `arrangement`, `page` {w, h} in mm, `picture_width`, `picture_size`, `picture_sizes`). Absent when the reader never opened Layout. The author app may ignore it. |
 
 Character positions are counted in UTF-16 code units (JavaScript string index). `quote`
 is the source of truth; `position` only tells repeated quotes apart. If they disagree

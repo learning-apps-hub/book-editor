@@ -9,6 +9,7 @@ import * as Shelf from './shelf.js';
 import * as Work from './work.js';
 import * as Id from './identity.js';
 import * as Layout from './layout.js';
+import * as Pdf from './pdf.js';
 
 // ---- Library location ----
 // The real Library sits at the app's own address under library/ (behind Cloudflare Access).
@@ -50,6 +51,7 @@ const S = {
   me: null, nameSheet: false, idDraft: null,                  // the reader's identity (identity.js) / the sheet choosing it
   editC: null,                                                 // { k: comment id, draft } comment being edited
   layoutScene: {}, pvSize: 'large',                            // selected preview scene / Large or Small
+  exporting: false,                                            // a PDF is being made
 };
 S.me = Id.load(store);
 const OLD_NAME = store.get('be.name') || '';                   // a name typed before identities (2026-11-11)
@@ -335,8 +337,8 @@ function actBar() {
   if (!S.selecting || S.route.view !== 'shelf') return '';
   const n = S.picked.size, dis = n ? '' : 'disabled';
   return `<div class="actbar"><div class="in"><span class="cnt" aria-live="polite">${esc(T(n === 0 ? 'nSel0' : n === 1 ? 'nSel1' : 'nSelN', { n }))}</span><div class="acts">
-    <button class="btn" data-act="act-move" ${dis}>${esc(T('moveTo'))}…</button><button class="btn" data-act="act-soon" ${dis}>${esc(T('exportA'))}</button>
-    <button class="btn" data-act="act-soon" ${dis}>${esc(T('sendBack'))}</button><button class="btn danger" data-act="act-delete" ${dis}>${esc(T('del'))}</button></div></div></div>`;
+    <button class="btn" data-act="act-move" ${dis}>${esc(T('moveTo'))}…</button><button class="btn" data-act="act-export" ${dis}>${esc(T('exportA'))}</button>
+    <button class="btn" data-act="act-send" ${dis}>${esc(T('sendBack'))}</button><button class="btn danger" data-act="act-delete" ${dis}>${esc(T('del'))}</button></div></div></div>`;
 }
 function shelfSheet() {
   if (S.sheet === 'move') {
@@ -466,6 +468,7 @@ function layoutSettings(rec, target = layoutTarget(rec)) {
 function setLayout(rec, target, settings) {
   rec.layout = rec.layout || { target: 'a5', settings: {} };
   rec.layout.target = target;
+  if (target !== 'changes') rec.layout.print = target;          // the last printed look, carried in the changes file
   rec.layout.settings = { ...(rec.layout.settings || {}), ...(settings ? { [target]: settings } : {}) };
   queueSave();
 }
@@ -481,6 +484,32 @@ function layoutData(rec) {
     text: Object.fromEntries(rec.book.languages.map(l => [l, Work.value(rec, s.number, 'text', l)])) }));
   const languageMeta = Object.fromEntries(rec.book.languages.map(l => [l, langName(l, rec.book.languageNames)]));
   return Layout.buildLayout({ book: rec.book, story, settings, urls: S.mine?.urls || {}, languageMeta });
+}
+// The look last picked for print, sent with the changes file (docs/book-file-format.md §2 "layout"; the author may ignore it).
+function layoutChoice(rec) {
+  const target = rec.layout?.print || (layoutTarget(rec) !== 'changes' ? layoutTarget(rec) : null);
+  return target ? { target, settings: layoutSettings(rec, target) } : undefined;
+}
+const pdfName = (rec, target) => fileName(rec).replace(/\.changes\.json$/, '') + ` - ${targetName(target).replace(/[\\/:*?"<>|]+/g, ' ').trim()}.pdf`;
+async function exportPdf(rec) {
+  if (S.exporting) return;
+  const target = layoutTarget(rec), data = layoutData(rec);
+  S.exporting = true; render();
+  try {
+    const out = await Pdf.makePdf(data, { title: titleOf(rec.book.titles, rec.book.languages, S.ui) });
+    const name = pdfName(rec, target);
+    download(name, new Blob([out.bytes], { type: 'application/pdf' }));
+    window.bePdf = { name, pages: out.pages, ms: out.ms, steps: out.steps, size: out.bytes.length };   // read by the QA scripts
+    toast(T('pdfSaved', { file: name, n: out.pages }));
+  } catch (e) {
+    const sc = e?.code === 'fontMissing' && e.detail;
+    const language = sc && rec.book.languages.filter(l => Layout.scriptFor(l) === sc).map(l => langName(l, rec.book.languageNames)).join(', ');
+    window.bePdf = { error: e?.code || String(e) };
+    console.warn('PDF export failed', e);
+    toast(sc ? T('pdfFont', { language: language || sc }) : T('pdfFail'));
+  } finally {
+    S.exporting = false; render();
+  }
 }
 const layRow = (label, control) => `<div class="sl">${esc(label)}</div><div class="sc">${control}</div>`;
 function laySeg(options, current, aria) {
@@ -550,9 +579,9 @@ function layoutView(rec) {
   const selected = S.layoutScene[rec.id] ?? 0;
   const missing = Object.fromEntries(data.missingTitles.map(x => [x.spread, x.languages]));
   const options = Layout.TARGETS.map(([k, key]) => `<option value="${k}" ${k === target ? 'selected' : ''}>${esc(T(key))}</option>`).join('');
-  const exportLabel = target === 'changes' ? T('sendBack') : T('exportA');
+  const exportLabel = S.exporting ? T('making') : target === 'changes' ? T(rec.sent ? 'saveAgain' : 'sendBack') : T('exportA');
   const card = `<section class="card xcard"><div class="xrow"><label class="xto"><span>${esc(T('exportTo'))}</span><select class="box" id="xt">${options}</select></label>
-    <button class="btn primary" data-act="layout-export">${esc(exportLabel)}</button></div><div class="xnote" role="note"><span class="xi" aria-hidden="true">i</span><div>${esc(layoutNote(target))}</div></div>
+    <button class="btn primary" data-act="layout-export" ${S.exporting ? 'disabled aria-busy="true"' : ''}>${esc(exportLabel)}</button></div><div class="xnote" role="note"><span class="xi" aria-hidden="true">i</span><div>${esc(layoutNote(target))}</div></div>
     ${layoutSettingsPanel(rec, target, st)}</section>`;
   const jump = `<div class="side"><div class="eyebrow">${esc(T('jumpTo').toLocaleUpperCase(S.ui))}</div><div class="spreadgrid" id="pv-jump">
     <button class="sq picked ${selected === 0 ? 'on' : ''}" data-act="layout-page" data-k="0" aria-label="${esc(T('cover'))}">C</button>${rec.story.map(s => {
@@ -790,7 +819,8 @@ function sendSheet() {
 }
 const fileName = rec => `${(titleOf(rec.book.titles, rec.book.languages) || rec.id).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').trim() || 'book'}.changes.json`;
 function download(name, obj) {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(obj, null, 2) + '\n'], { type: 'application/json' }));
+  const blob = obj instanceof Blob ? obj : new Blob([JSON.stringify(obj, null, 2) + '\n'], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
   const a = Object.assign(document.createElement('a'), { href: url, download: name });
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
@@ -917,7 +947,14 @@ document.addEventListener('click', e => {
   if (a === 'pick') { S.picked.has(k) ? S.picked.delete(k) : S.picked.add(k); render(); return document.querySelector(`.bk[data-k="${CSS.escape(k)}"]`)?.focus(); }
   if (a === 'act-move') { S.sheet = 'move'; render(); return document.querySelector('.movelist button')?.focus(); }
   if (a === 'act-delete') { S.sheet = 'delete'; render(); return document.querySelector('.sheetacts .btn')?.focus(); }
-  if (a === 'act-soon') return toast(T('soonAct'));
+  // Export / Send back from the shelf open the one picked book where that happens: its Layout, or its Send back sheet.
+  if (a === 'act-export' || a === 'act-send') {
+    if (S.picked.size !== 1) return toast(T('pickOne'));
+    const id = [...S.picked][0], b = S.shelf?.find(x => x.id === id);
+    if (a === 'act-export') return go(`book/${encodeURIComponent(id)}/layout`);
+    if (b && !b.sent) S.sendAsk = 'rewrite';                   // already sent: its Story shows "Save the file again"
+    return go(bookHash(id));
+  }
   if (a === 'sheet-close') return closeSheet();
   if (a === 'move-to') return moveTo(k);
   if (a === 'create-folder') return createFolder();
@@ -944,7 +981,11 @@ function layoutClick(a, k, button) {
     setLayout(rec, layoutTarget(rec), st); render(); return true;
   }
   if (a === 'lay-scene-reset') { patchLayout(rec, { picture_sizes: { [k]: null } }); return true; }
-  if (a === 'layout-export') { toast(T(layoutTarget(rec) === 'changes' ? 'layoutSendSoon' : 'layoutExportSoon')); return true; }
+  if (a === 'layout-export') {
+    if (layoutTarget(rec) !== 'changes') { exportPdf(rec); return true; }
+    if (rec.sent) { storyClick('save-again'); return true; }      // the round is sent: the same file again
+    S.sendAsk = 'rewrite'; render(); document.querySelector('[data-act="send-yes"]')?.focus(); return true;
+  }
   return false;
 }
 
@@ -982,7 +1023,7 @@ function storyClick(a, k) {
   if (a === 'send-close') { S.sendAsk = null; render(); return document.querySelector('[data-act="ask-send"]')?.focus(); }
   if (a === 'send-yes' || a === 'save-again') {
     const kind = a === 'save-again' ? rec.sent?.kind : S.sendAsk;
-    const file = kind && Work.changesFile(rec, S.me, kind);
+    const file = kind && Work.changesFile(rec, S.me, kind, layoutChoice(rec));
     if (!file) { S.sendAsk = null; render(); return toast(T('nothingYet')); }
     download(fileName(rec), file);
     if (a === 'send-yes') { rec.sent = { kind, round: Work.round(rec), at: new Date().toISOString() }; S.sendAsk = null; S.pop = null; S.editC = null; S.delC = null; queueSave(); flushSave(); render(); }
