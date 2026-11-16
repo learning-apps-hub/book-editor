@@ -1,4 +1,10 @@
 /* Self-hosted fonts (SIL OFL, licences beside them), the faces eBook Production uses: Nunito (menus), Literata (story).
-   Noto Serif SC (14 MB) is not shipped yet (R2 delivery question open): Chinese falls back to the system serif. */
+   Book pages (Layout preview and PDF, pdf.js) use eBooks' book faces: BookLatin = Gelasio; BookHan/Kana/Hangul = Noto Serif SC/JP/KR.
+   The Noto files are big and not in the public repo yet (step 4 serves them from R2): where a file is absent the screen
+   falls back to the system serif and PDF export of that script says the font is missing. */
 @font-face { font-family: 'Nunito'; src: url('fonts/Nunito.woff2') format('woff2'); font-weight: 200 1000; font-display: swap; }
 @font-face { font-family: 'Literata'; src: url('fonts/Literata.woff2') format('woff2'); font-weight: 200 900; font-display: swap; }
+@font-face { font-family: 'BookLatin'; src: url('fonts/Gelasio-Regular.ttf') format('truetype'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'BookHan'; src: url('fonts/NotoSerifSC-Regular.ttf') format('truetype'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'BookKana'; src: url('fonts/NotoSerifJP-Regular.ttf') format('truetype'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'BookHangul'; src: url('fonts/NotoSerifKR-Regular.ttf') format('truetype'); font-weight: 400; font-display: swap; }

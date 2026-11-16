@@ -36,6 +36,9 @@ button.bk { background: none; border: 0; padding: 0; text-align: left; font: inh
 .emptybox { border: 2px dashed var(--line); border-radius: 22px; padding: 28px 20px; display: flex; flex-direction: column; gap: 14px; align-items: center; text-align: center; }
 .emptybox p { margin: 0; font-size: 17px; font-weight: 600; max-width: 34em; }
 .bigbtn { min-height: 52px; font-size: 17px; }
+/* Library card: the add button's label and its sub-line on two lines */
+.addbig > span { display: flex; flex-direction: column; align-items: flex-start; text-align: left; line-height: 1.2; min-width: 0; }
+.addbig small { font-weight: 600; font-size: 13px; opacity: .9; }
 .btn.danger { color: var(--red); }
 .btn:disabled { opacity: .5; cursor: default; }
 .onbtn { border: 2px solid var(--green); color: var(--green-d); background: var(--green-l); }
