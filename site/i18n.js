@@ -481,11 +481,11 @@ const LAYOUT_EN = {
   titleMissing: 'Scene {n} has a missing title', titleMissingHelp: 'A title is missing in: {languages}.', useBookSize: "Use the book's size", sameBook: 'Same as the book', oneLanguage: 'Keep at least one language.',
   backCover: 'Back cover', pageN: 'page {n}', sheetSide: 'Sheet {sheet} · side {side}',
   page_a4p: 'A4 portrait', page_a4l: 'A4 landscape', page_169: 'Widescreen 16:9', page_43: 'Tablet 4:3',
-  making: 'Making the PDF…', pdfSaved: 'Saved: {file} ({n} pages)', pdfFont: 'The {language} font for PDFs is not on this site yet. Leave {language} out under Languages to export without it.', pdfFail: 'The PDF could not be made. Try again; if it still fails, use the browser\'s Print.', pickOne: 'Pick one book for this.',
+  making: 'Making the PDF…', pdfReady: 'Your PDF is ready', savePdf: 'Save the PDF', pdfSaved: 'Saved: {file} ({n} pages)', pdfFont: 'The {language} font for PDFs is not on this site yet. Leave {language} out under Languages to export without it.', pdfFail: 'The PDF could not be made. Try again; if it still fails, use the browser\'s Print.', pickOne: 'Pick one book for this.',
 };
 const LAYOUT_TRANSLATIONS = {
   zh: {
-    making: '正在制作 PDF…', pdfSaved: '已保存：{file}（{n} 页）', pdfFont: '这个网站上还没有做 PDF 用的{language}字体。在“语言”里去掉{language}，就能先导出其他语言。', pdfFail: 'PDF 没有做成。请再试一次；还不行的话，请用浏览器的“打印”。', pickOne: '请只选一本书。',
+    making: '正在制作 PDF…', pdfReady: 'PDF 已做好', savePdf: '保存 PDF', pdfSaved: '已保存：{file}（{n} 页）', pdfFont: '这个网站上还没有做 PDF 用的{language}字体。在“语言”里去掉{language}，就能先导出其他语言。', pdfFail: 'PDF 没有做成。请再试一次；还不行的话，请用浏览器的“打印”。', pickOne: '请只选一本书。',
     layoutSub: '选择页面并预览整本书', exportTo: '导出为', targetTv: '电视（16:9）', targetA5: 'A5 小册子', targetCustom: '自定义', targetChanges: '给作者的修改', layoutSettings: '版式设置', paperSize: '纸张大小', folded: '折叠后', pageLayout: '页面版式',
     arrFacing: '图片和文字分列对页', arrPicture: '图片单独一页，下一页是文字', arrHalf: '图片和文字同页，各占一半', arrFull: '图片和文字同页，图片通高', arrBooklet: '折叠小册子', languages: '语言', upToN: '这里最多 {n} 种', languagesPage: '一页上的语言', sideBySide: '并排', oneSlide: '每种语言一张', onePage: '每种语言一页', textSize: '字号', pictures: '图片', colour: '彩色', colouring: '涂色线稿', none: '无', small: '小图', on: '开', off: '关', smallPictures: '小图片', pictureSize: '图片大小', scenePictureSize: '场景 {n} 的图片大小', ownSizes: '{n} 个场景有自己的大小', useAll: '所有场景用这个大小', covers: '封面', front: '前封面', back: '后封面', lineArt: '线稿',
     noteTv: '16:9 宽屏 PDF：图片在左，文字在旁边。适合电视或平板。', noteA5: 'A4 纸上的 A5 小册子 PDF。双面打印，短边翻转，叠好、对折并装订。', noteCustom: '用你在这里选的纸张和页面版式做成 PDF。预览就是 PDF 里的页面。', noteChanges: '保存给作者的修改文件：你的修改、评论和本轮留言。请用邮件或聊天软件发给作者。和“故事”底部的“发回”一样。',

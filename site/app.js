@@ -498,9 +498,11 @@ async function exportPdf(rec) {
   try {
     const out = await Pdf.makePdf(data, { title: titleOf(rec.book.titles, rec.book.languages, S.ui) });
     const name = pdfName(rec, target);
-    download(name, new Blob([out.bytes], { type: 'application/pdf' }));
+    const blob = new Blob([out.bytes], { type: 'application/pdf' });
     window.bePdf = { name, pages: out.pages, ms: out.ms, steps: out.steps, size: out.bytes.length };   // read by the QA scripts
-    toast(T('pdfSaved', { file: name, n: out.pages }));
+    const r = await savePdf(name, blob);
+    if (r === 'saved') toast(T('pdfSaved', { file: name, n: out.pages }));
+    else if (r === 'ask') S.pdfReady = { name, blob, pages: out.pages };
   } catch (e) {
     const sc = e?.code === 'fontMissing' && e.detail;
     const language = sc && rec.book.languages.filter(l => Layout.scriptFor(l) === sc).map(l => langName(l, rec.book.languageNames)).join(', ');
@@ -825,6 +827,34 @@ function download(name, obj) {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
+// iPhone/iPad Safari opens a PDF link as a page instead of saving it, so PDFs go through the share sheet there ("Save to Files").
+// iPadOS reports itself as a Mac; Chrome/Firefox/Edge on iOS (CriOS/FxiOS/EdgiOS) download fine and keep the link click.
+const iosSafari = () => (/iP(ad|hone|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))
+  && !/CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
+// Returns 'saved', 'cancelled', or 'ask' (the tap that started the export has run out while the PDF was made: ask for one more tap).
+async function savePdf(name, blob) {
+  const file = typeof File === 'function' && new File([blob], name, { type: 'application/pdf' });
+  if (!iosSafari() || !file || !navigator.canShare?.({ files: [file] })) { download(name, blob); return 'saved'; }
+  try { await navigator.share({ files: [file] }); return 'saved'; }
+  catch (e) {
+    if (e?.name === 'AbortError') return 'cancelled';
+    if (e?.name === 'NotAllowedError') return 'ask';
+    download(name, blob); return 'saved';
+  }
+}
+function pdfSheet() {
+  if (!S.pdfReady) return '';
+  return `<div class="sheetbox" data-act="pdf-close"><section class="card" role="dialog" aria-modal="true" aria-labelledby="ph" data-stop="1">
+    <h2 id="ph">${esc(T('pdfReady'))}</h2><p><b>${esc(S.pdfReady.name)}</b></p>
+    <div class="sheetacts"><button class="btn bigbtn" data-act="pdf-close">${esc(T('cancel'))}</button><button class="btn primary bigbtn" data-act="pdf-share">${esc(T('savePdf'))}</button></div></section></div>`;
+}
+async function sharePdfAgain() {
+  const P = S.pdfReady; if (!P) return;
+  S.pdfReady = null; render();
+  const r = await savePdf(P.name, P.blob);
+  if (r === 'saved') toast(T('pdfSaved', { file: P.name, n: P.pages }));
+  else if (r === 'ask') { S.pdfReady = P; render(); }
+}
 
 // The reader's identity: asked once per device, changeable (a shared tablet: each person picks their own).
 function saveName() {
@@ -877,7 +907,7 @@ function render() {
   const f = document.activeElement, keep = f?.id && app.contains(f)
     ? { id: f.id, s: f.selectionStart, e: f.selectionEnd, d: f.selectionDirection, top: f.scrollTop } : null;
   app.classList.toggle('selecting', S.selecting && r.view === 'shelf');
-  app.innerHTML = (r.view === 'book' ? '' : header()) + main + actBar() + shelfSheet() + sendSheet() + nameSheet() + langSheet();
+  app.innerHTML = (r.view === 'book' ? '' : header()) + main + actBar() + shelfSheet() + sendSheet() + pdfSheet() + nameSheet() + langSheet();
   const el = keep && document.getElementById(keep.id);
   if (el) {
     el.focus({ preventScroll: true });
@@ -926,7 +956,7 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]');
   if (!b || b.disabled) return;
   // A tap inside a sheet's card (not on a button) must not close the sheet.
-  if (['lang-close', 'sheet-close', 'name-close', 'send-close'].includes(b.dataset.act) && b.classList.contains('sheetbox') && e.target.closest('[data-stop]')) return;
+  if (['lang-close', 'sheet-close', 'name-close', 'send-close', 'pdf-close'].includes(b.dataset.act) && b.classList.contains('sheetbox') && e.target.closest('[data-stop]')) return;
   const a = b.dataset.act, k = b.dataset.k;
   if (a === 'mark') return markTap(b);
   if (a === 'go') return go(k);
@@ -937,6 +967,8 @@ document.addEventListener('click', e => {
   if (a === 'add') return addBook(k);
   if (a === 'retry-lib') return loadLibrary().then(onRoute);
   if (a === 'retry-book') { delete S.books[S.route.id]; return loadBook(S.route.id); }
+  if (a === 'pdf-close') { S.pdfReady = null; return render(); }
+  if (a === 'pdf-share') return sharePdfAgain();
   if (a === 'lang-open') { S.langSheet = true; render(); return document.querySelector('.langbtn[aria-pressed="true"]')?.focus(); }
   if (a === 'lang-close') { S.langSheet = false; render(); return document.querySelector('.langbig')?.focus(); }
   if (a === 'ui') { S.ui = k; store.set('be.ui', k); S.langSheet = false; render(); return document.querySelector('.langbig')?.focus(); }
@@ -1125,6 +1157,7 @@ document.addEventListener('mouseup', e => { if (e.target.closest?.('#pane [data-
 let selTimer;
 document.addEventListener('selectionchange', () => { clearTimeout(selTimer); selTimer = setTimeout(() => onSelect(false), 450); });
 document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && S.pdfReady) { S.pdfReady = null; return render(); }
   if (e.key === 'Escape' && S.langSheet) { S.langSheet = false; render(); return; }
   if (e.key === 'Escape' && S.pop && S.route.view === 'book') { S.pop = null; getSelection()?.removeAllRanges(); return render(); }
   if (e.key === 'Escape' && S.sendAsk && S.route.view === 'book') { S.sendAsk = null; render(); return document.querySelector('[data-act="ask-send"]')?.focus(); }
