@@ -1,0 +1,30 @@
+/* Ask to join: stand-alone page (the app's stylesheets sit behind sign-in). eBooks' colours and shapes, system fonts. */
+:root { --bg: #F6F1E7; --card: #FFFDF8; --ink: #2A2723; --muted: #6B645A; --line: #E2D9C8; --green: #2F6B5E; --green-d: #24564B; --green-l: #DCEBE6;
+  --amber: #FCE7B2; --amber-d: #E2B65A; --red: #B42318; --red-l: #FDE7E4; }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.5 system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+.wrap { max-width: 560px; margin: 0 auto; padding: 24px 16px 48px; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 900; font-size: 20px; color: var(--green-d); margin-bottom: 16px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+h1 { margin: 0; font-size: 26px; line-height: 1.2; }
+p { margin: 0; }
+.muted { color: var(--muted); }
+label { font-weight: 800; display: block; margin-bottom: 4px; }
+.req { color: var(--red); }
+input, textarea { width: 100%; min-height: 52px; border: 2px solid var(--line); border-radius: 12px; padding: 8px 12px; background: #fff; font: inherit; color: inherit; }
+textarea { min-height: 88px; resize: vertical; }
+input:focus, textarea:focus { border-color: var(--green); outline: none; box-shadow: 0 0 0 3px var(--green-l); }
+input[readonly] { background: var(--bg); }
+.mail { overflow-wrap: anywhere; font-weight: 800; }
+.btn { display: inline-flex; justify-content: center; align-items: center; min-height: 56px; padding: 8px 20px; border-radius: 14px; border: 1px solid var(--green);
+  background: var(--green); color: #fff; font: inherit; font-weight: 800; text-decoration: none; cursor: pointer; width: 100%; }
+.btn.plain { background: var(--card); color: var(--green-d); border-color: var(--line); }
+.btn:disabled { opacity: .5; cursor: default; }
+.msg { border-radius: 14px; padding: 12px 14px; background: var(--amber); border: 1px solid var(--amber-d); }
+.msg.bad { background: var(--red-l); border-color: var(--red); }
+.msg.good { background: var(--green-l); border-color: var(--green); }
+.langs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 18px; }
+.langs button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; min-height: 40px; padding: 4px 12px; font: inherit; font-size: 15px; cursor: pointer; }
+.langs button[aria-pressed="true"] { background: var(--green); color: #fff; border-color: var(--green); }
+:focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }

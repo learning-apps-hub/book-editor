@@ -9,9 +9,13 @@
 //   ADMIN_EMAILS        secret  comma-separated; always admins, cannot be removed in the app
 //   CF_ACCESS_TOKEN     secret  API token: Access Apps and Policies Edit + Access Organizations Edit, nothing else
 //   GOOGLE_USERS_URL    plain   optional: the Google Cloud "Test users" page, shown to admins
-// R2 binding LIBRARY holds the People list at system/people.json (the bucket is private).
+//   JOIN_AUD            plain   audience tag of the second Access app that guards /join (any verified email may enter)
+//   NTFY_URL            secret  optional: ntfy topic URL; a push (no names, no emails) when someone asks to join
+// R2 binding LIBRARY: People list at system/people.json, join requests at system/requests.json (the bucket is private).
 
-const PEOPLE_KEY = 'system/people.json';
+const PEOPLE_KEY = 'system/people.json', REQUESTS_KEY = 'system/requests.json';
+export const NAME_MAX = 80, NOTE_MAX = 300, MAX_REQUESTS = 20;
+export const cleanText = (x, max) => String(x ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().replace(/\s+/g, ' ').slice(0, max);
 const CF_API = 'https://api.cloudflare.com/client/v4';
 export const ROLES = ['reader', 'admin'];
 export const LOGINS = ['google', 'code'];
@@ -56,8 +60,8 @@ async function teamKeys(team, fetcher, fresh = false) {
 }
 
 /** The signed-in email from a valid Access token, else throws 401. */
-export async function verifyAccess(request, env, fetcher = fetch) {
-  const team = env.ACCESS_TEAM_DOMAIN, aud = env.ACCESS_AUD;
+export async function verifyAccess(request, env, fetcher = fetch, aud = env.ACCESS_AUD) {
+  const team = env.ACCESS_TEAM_DOMAIN;
   if (!team || !aud) throw new HttpError(503, 'not-configured');
   const token = request.headers.get('cf-access-jwt-assertion');
   if (!token) throw new HttpError(401, 'signed-out');
@@ -81,19 +85,23 @@ export async function verifyAccess(request, env, fetcher = fetch) {
 }
 
 // ---- The People list in R2 ----
-export async function readPeople(env) {
+async function readList(env, key, field) {
   if (!env.LIBRARY) throw new HttpError(503, 'not-configured');
-  const obj = await env.LIBRARY.get(PEOPLE_KEY);
-  if (!obj) return { people: [], etag: null };
+  const obj = await env.LIBRARY.get(key);
+  if (!obj) return { [field]: [], etag: null };
   const data = await obj.json();
-  return { people: Array.isArray(data.people) ? data.people : [], etag: obj.etag };
+  return { [field]: Array.isArray(data[field]) ? data[field] : [], etag: obj.etag };
 }
-export async function writePeople(env, people, etag) {
-  const body = JSON.stringify({ format: 'book-editor-people', version: 1, people }, null, 1);
+export const readPeople = env => readList(env, PEOPLE_KEY, 'people');
+export const readRequests = env => readList(env, REQUESTS_KEY, 'requests');
+export const writePeople = (env, people, etag) => writeList(env, PEOPLE_KEY, { format: 'book-editor-people', version: 1, people }, etag);
+export const writeRequests = (env, requests, etag) => writeList(env, REQUESTS_KEY, { format: 'book-editor-requests', version: 1, requests }, etag);
+async function writeList(env, key, data, etag) {
+  const body = JSON.stringify(data, null, 1);
   const opts = { httpMetadata: { contentType: 'application/json' } };
   // Only replace the list we read: two admins saving at once must not undo each other.
   opts.onlyIf = etag ? { etagMatches: etag } : { uploadedBefore: new Date(0) };
-  const res = await env.LIBRARY.put(PEOPLE_KEY, body, opts);
+  const res = await env.LIBRARY.put(key, body, opts);
   if (res === null) throw new HttpError(409, 'changed');
 }
 
@@ -151,4 +159,14 @@ export async function syncPolicy(env, people, fetcher = fetch) {
 /** Ends a removed person's Access sessions straight away (otherwise they last up to the session length). */
 export async function revokeUser(env, email, fetcher = fetch) {
   await cf(env, fetcher, 'POST', '/access/organizations/revoke_user', { email });
+}
+
+/** A push to the admin's phone. Carries no names or emails (ntfy is a third-party service). Never fails the request. */
+export async function notifyAdmin(env, appUrl, fetcher = fetch) {
+  if (!env.NTFY_URL) return false;
+  try {
+    const r = await fetcher(env.NTFY_URL, { method: 'POST', body: 'Someone asked to join Book Editor. Open Settings to approve or decline.',
+      headers: { title: 'Book Editor: new request', tags: 'books', click: appUrl + '#settings' } });
+    return r.ok;
+  } catch { return false; }
 }

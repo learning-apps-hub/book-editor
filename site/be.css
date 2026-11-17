@@ -200,3 +200,8 @@ mark.flash { outline-offset: 1px; }
 .pa { display: flex; gap: 8px; }
 .pa .btn { min-height: 44px; }
 @media (max-width: 640px) { .pa { width: 100%; } .pa .btn { flex: 1; } }
+.waitcard { border-color: var(--amber-d); }
+.waitcard h2 { display: flex; align-items: center; gap: 8px; }
+.qnote { font-style: italic; overflow-wrap: anywhere; }
+.joinlink { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; padding: 12px; border: 1px dashed var(--line); border-radius: 14px; }
+.joinlink code { font-size: 15px; background: var(--soft); padding: 2px 8px; border-radius: 8px; }

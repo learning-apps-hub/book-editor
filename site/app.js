@@ -53,7 +53,7 @@ const S = {
   layoutScene: {}, pvSize: 'large',                            // selected preview scene / Large or Small
   exporting: false,                                            // a PDF is being made
   // Settings: acct = { email, role, googleUsersUrl? } | 'none' (no sign-in on this copy) | null (asking)
-  acct: null, people: null, peopleErr: null, pForm: { email: '', role: 'reader', login: 'code', editing: false }, pBusy: false, pRemove: null,
+  acct: null, people: null, peopleErr: null, pForm: { email: '', name: '', role: 'reader', login: 'code', editing: false }, pBusy: false, pRemove: null,
 };
 S.me = Id.load(store);
 const OLD_NAME = store.get('be.name') || '';                   // a name typed before identities (2026-11-11)
@@ -384,18 +384,39 @@ async function loadPeople() {
   try { S.people = await api('GET', 'api/admin/people'); S.peopleErr = null; } catch (e) { S.peopleErr = e.code; }
   render();
 }
+const keepForm = () => { const e = document.getElementById('pemail'), n = document.getElementById('pname'); if (e) S.pForm.email = e.value; if (n) S.pForm.name = n.value; };
 async function savePerson() {
-  const f = S.pForm, box = document.getElementById('pemail'), email = (box?.value ?? f.email).trim().toLowerCase();
+  keepForm();
+  const f = S.pForm, email = f.email.trim().toLowerCase(), name = f.name.trim();
   f.email = email;
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast(errText('bad-email')); return box?.focus(); }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast(errText('bad-email')); return document.getElementById('pemail')?.focus(); }
+  if (name.length < 2) { toast(errText('name-needed')); return document.getElementById('pname')?.focus(); }
   S.pBusy = true; render();
   try {
-    S.people = await api('POST', 'api/admin/people', { email, role: f.role, login: f.login });
+    S.people = await api('POST', 'api/admin/people', { email, name, role: f.role, login: f.login });
     toast(T(f.editing ? 'savedP' : 'addedP', { email }));
-    S.pForm = { email: '', role: 'reader', login: f.login, editing: false };
+    S.pForm = { email: '', name: '', role: 'reader', login: f.login, editing: false };
   } catch (e) { toast(errText(e.code)); if (e.code === 'changed') await loadPeople(); }
   S.pBusy = false; render();
   if (!S.pForm.email) document.getElementById('pemail')?.focus();
+}
+async function approveRequest(email) {
+  const q = S.people?.requests?.find(x => x.email === email); if (!q) return;
+  S.pBusy = true; render();
+  try { S.people = await api('POST', 'api/admin/people', { email, name: q.name, role: 'reader', login: 'code' }); toast(T('approvedP', { name: q.name })); }
+  catch (e) { toast(errText(e.code)); if (e.code === 'changed') await loadPeople(); }
+  S.pBusy = false; render();
+}
+async function declineRequest(email) {
+  const q = S.people?.requests?.find(x => x.email === email); if (!q) return;
+  S.pBusy = true; render();
+  try { S.people = await api('DELETE', 'api/admin/requests', { email }); toast(T('declinedP', { name: q.name })); }
+  catch (e) { toast(errText(e.code)); await loadPeople(); }
+  S.pBusy = false; render();
+}
+async function copyJoinLink() {
+  const url = location.origin + '/join/';
+  try { await navigator.clipboard.writeText(url); toast(T('copied')); } catch { toast(url); }
 }
 async function removePerson(email) {
   S.pBusy = true; render();
@@ -418,6 +439,8 @@ function peopleCard(a) {
   const f = S.pForm, seg = (name, k, opts) => `<div class="seg" role="group" aria-label="${esc(T(name))}">${opts.map(([v, l]) =>
     `<button type="button" data-act="pf" data-f="${k}" data-k="${v}" aria-pressed="${f[k] === v}">${esc(T(l))}</button>`).join('')}</div>`;
   const form = `<div class="pform">
+      <label class="fl" for="pname">${esc(T('nameL'))}</label>
+      <input id="pname" class="nickin" autocomplete="off" maxlength="80" value="${esc(f.name)}">
       <label class="fl" for="pemail">${esc(T('emailL'))}</label>
       <input id="pemail" class="nickin" type="email" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="254" value="${esc(f.email)}" ${f.editing ? 'readonly' : ''}>
       <div class="prow"><span class="fl">${esc(T('roleL'))}</span>${seg('roleL', 'role', [['reader', 'roleReader'], ['admin', 'roleAdmin']])}</div>
@@ -430,12 +453,18 @@ function peopleCard(a) {
   else if (!S.people) list = `<div class="loading">${esc(T('loading'))}</div>`;
   else {
     const fixed = S.people.fixed.map(e => `<li class="prs"><div class="pm"><b class="mail">${esc(e)}</b><span class="tags">${roleChip('admin')}<span class="muted tiny">${esc(T('ownerTag'))}${e === a.email ? ' · ' + esc(T('youTag')) : ''}</span></span></div></li>`);
-    const rows = S.people.people.slice().sort((x, y) => x.email.localeCompare(y.email)).map(p => `<li class="prs"><div class="pm"><b class="mail">${esc(p.email)}</b>
+    const rows = S.people.people.slice().sort((x, y) => (x.name || x.email).localeCompare(y.name || y.email)).map(p => `<li class="prs"><div class="pm">${p.name ? `<b>${esc(p.name)}</b><span class="mail muted">${esc(p.email)}</span>` : `<b class="mail">${esc(p.email)}</b>`}
         <span class="tags">${roleChip(p.role)}<span class="chip">${esc(T(p.login === 'google' ? 'loginGoogle' : 'loginCode'))}</span>${p.email === a.email ? `<span class="muted tiny">${esc(T('youTag'))}</span>` : ''}</span></div>
         <div class="pa"><button class="btn" data-act="p-edit" data-k="${esc(p.email)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('editP'))}</button>${p.email === a.email ? '' : `<button class="btn danger" data-act="p-remove" data-k="${esc(p.email)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('removeP'))}</button>`}</div></li>`);
     list = `<ul class="plist">${fixed.join('')}${rows.join('')}</ul>${rows.length ? '' : `<p class="muted">${esc(T('nobodyYet'))}</p>`}`;
   }
-  return `<section class="card setcard"><h2>${esc(T('people'))}</h2><p class="muted">${esc(T('peopleHelp'))}</p>${form}${list}</section>`;
+  const reqs = S.people?.requests || [];
+  const waiting = reqs.length ? `<section class="card setcard waitcard"><h2>${esc(T('waitingL'))} <span class="chip">${reqs.length}</span></h2><p class="muted">${esc(T('waitingHelp'))}</p>
+    <ul class="plist">${reqs.map(q => `<li class="prs"><div class="pm"><b>${esc(q.name)}</b><span class="mail muted">${esc(q.email)}</span>
+      ${q.note ? `<span class="qnote">“${esc(q.note)}”</span>` : ''}<span class="muted tiny">${esc(new Date(q.changedAt || q.at).toLocaleString(S.ui))}</span></div>
+      <div class="pa"><button class="btn primary" data-act="q-yes" data-k="${esc(q.email)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('approveP'))}</button><button class="btn danger" data-act="q-no" data-k="${esc(q.email)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('declineP'))}</button></div></li>`).join('')}</ul></section>` : '';
+  const share = `<div class="joinlink"><b>${esc(T('joinLinkL'))}</b><p class="muted">${esc(T('joinLinkHelp'))}</p><code class="mail">${esc(location.origin + '/join/')}</code><button class="btn" data-act="join-copy">${esc(T('copyLink'))}</button></div>`;
+  return `${waiting}<section class="card setcard"><h2>${esc(T('people'))}</h2><p class="muted">${esc(T('peopleHelp'))}</p>${share}${form}${list}</section>`;
 }
 const problem2 = text => `<div class="msg bad" role="alert"><p>${esc(text)}</p></div>`;
 function removeSheet() {
@@ -1049,10 +1078,13 @@ document.addEventListener('click', e => {
   const a = b.dataset.act, k = b.dataset.k;
   if (a === 'mark') return markTap(b);
   if (a === 'go') return go(k);
-  if (a === 'pf') { S.pForm.email = document.getElementById('pemail')?.value ?? S.pForm.email; S.pForm[b.dataset.f] = k; return render(); }
+  if (a === 'pf') { keepForm(); S.pForm[b.dataset.f] = k; return render(); }
   if (a === 'p-save') return savePerson();
-  if (a === 'p-edit') { const p = S.people?.people.find(x => x.email === k); if (!p) return; S.pForm = { email: p.email, role: p.role, login: p.login, editing: true }; render(); return document.getElementById('pemail')?.scrollIntoView({ block: 'center' }); }
-  if (a === 'pf-cancel') { S.pForm = { email: '', role: 'reader', login: S.pForm.login, editing: false }; return render(); }
+  if (a === 'q-yes') return approveRequest(k);
+  if (a === 'q-no') return declineRequest(k);
+  if (a === 'join-copy') return copyJoinLink();
+  if (a === 'p-edit') { const p = S.people?.people.find(x => x.email === k); if (!p) return; S.pForm = { email: p.email, name: p.name || '', role: p.role, login: p.login, editing: true }; render(); return document.getElementById('pemail')?.scrollIntoView({ block: 'center' }); }
+  if (a === 'pf-cancel') { S.pForm = { email: '', name: '', role: 'reader', login: S.pForm.login, editing: false }; return render(); }
   if (a === 'p-remove') { S.pRemove = k; render(); return document.querySelector('[data-act="p-remove-no"].btn')?.focus(); }
   if (a === 'p-remove-no') { S.pRemove = null; return render(); }
   if (a === 'p-remove-yes') return removePerson(S.pRemove);
@@ -1259,7 +1291,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && S.sendAsk && S.route.view === 'book') { S.sendAsk = null; render(); return document.querySelector('[data-act="ask-send"]')?.focus(); }
   if (e.key === 'Escape' && S.sheet) return closeSheet();
   if (e.key === 'Enter' && e.target.id === 'nf') { e.preventDefault(); return createFolder(); }
-  if (e.key === 'Enter' && e.target.id === 'pemail') { e.preventDefault(); return savePerson(); }
+  if (e.key === 'Enter' && (e.target.id === 'pemail' || e.target.id === 'pname')) { e.preventDefault(); return savePerson(); }
   if (e.key === 'Escape' && S.pRemove) { S.pRemove = null; return render(); }
   if (e.key === 'Enter' && e.target.id === 'nm') { e.preventDefault(); return saveName(); }
   if (e.key === 'Escape' && S.nameSheet) { S.nameSheet = false; S.idDraft = null; return render(); }
@@ -1280,6 +1312,7 @@ document.addEventListener('input', e => {
   if (el.id === 'ced' && S.editC) { S.editC.draft = el.value; return; }
   if (el.id === 'nm' && S.idDraft) { S.idDraft.nick = el.value; return; }
   if (el.id === 'pemail') { S.pForm.email = el.value; return; }
+  if (el.id === 'pname') { S.pForm.name = el.value; return; }
   if (el.id === 'draft' && S.pop) { S.pop.draft = el.value; return; }
 });
 document.addEventListener('change', e => {
