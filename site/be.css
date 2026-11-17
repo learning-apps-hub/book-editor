@@ -177,3 +177,26 @@ mark.flash { outline-offset: 1px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 .movelist .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; }
+
+/* Settings: account + People (admins). Built from eBooks' card, chip, seg and btn. */
+.gearbtn { cursor: pointer; padding-inline: 10px; }
+.gearbtn[aria-current="page"] { border-color: var(--green); color: var(--green-d); }
+.setcard { display: flex; flex-direction: column; gap: 12px; }
+.setcard h2, .setcard p { margin: 0; }
+.setcard .who { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; font-size: 17px; }
+.setcard a.btn { align-self: flex-start; text-decoration: none; }
+.mail { overflow-wrap: anywhere; word-break: break-word; }
+.pform { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); }
+.pform .fl { font-weight: 800; }
+.pform .nickin[readonly] { background: var(--soft); }
+.prow { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.prow .seg button { min-height: 44px; font-size: 16px; }
+.pnote { font-size: 15px; background: var(--amber); border: 1px solid var(--amber-d); border-radius: 12px; padding: 10px 12px; }
+.pform .sheetacts .wide { grid-column: 1 / -1; }
+.plist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.prs { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; background: var(--card); }
+.pm { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 220px; }
+.pm .tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pa { display: flex; gap: 8px; }
+.pa .btn { min-height: 44px; }
+@media (max-width: 640px) { .pa { width: 100%; } .pa .btn { flex: 1; } }

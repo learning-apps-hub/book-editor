@@ -52,6 +52,8 @@ const S = {
   editC: null,                                                 // { k: comment id, draft } comment being edited
   layoutScene: {}, pvSize: 'large',                            // selected preview scene / Large or Small
   exporting: false,                                            // a PDF is being made
+  // Settings: acct = { email, role, googleUsersUrl? } | 'none' (no sign-in on this copy) | null (asking)
+  acct: null, people: null, peopleErr: null, pForm: { email: '', role: 'reader', login: 'code', editing: false }, pBusy: false, pRemove: null,
 };
 S.me = Id.load(store);
 const OLD_NAME = store.get('be.name') || '';                   // a name typed before identities (2026-11-11)
@@ -174,6 +176,7 @@ async function loadMine(id) {
 function parseRoute() {
   const [view, id, at, n] = decodeURIComponent(location.hash.slice(1)).split('/');
   if (view === 'shelf') return { view: 'shelf' };
+  if (view === 'settings') return { view: 'settings' };
   if (view === 'book' && id) return at === 'layout' ? { view, id, tab: 'layout' } : { view, id, tab: 'story', n: Math.max(1, parseInt(n, 10) || 1) };
   if (view === 'mine' && id) return { view: 'book', id, tab: 'story', n: Math.max(1, parseInt(at, 10) || 1) };
   if (view === 'read' && id) return { view, id, at: Math.max(0, parseInt(at, 10) || 0) };
@@ -195,6 +198,7 @@ function onRoute() {
   if (r.view !== 'book') S.nameSheet = false;
   if (r.view === 'read' && S.lib) loadBook(r.id);
   if (r.view === 'book') loadMine(r.id); else closeMine();
+  if (r.view === 'settings') loadAccount();
   render();
   if (prev.view !== r.view || prev.id !== r.id || prev.n !== r.n || prev.tab !== r.tab) window.scrollTo(0, 0);
 }
@@ -207,6 +211,7 @@ const ICON_SHELF = '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" 
 const ICON_LIB = '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M2 9l10-5 10 5z"/><path d="M5 9v9M9.7 9v9M14.3 9v9M19 9v9"/><path d="M2 21h20"/></svg>';
 const ICON_PEN = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>';
 const ICON_READ = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M12 6c-2-1.5-5-2-8-1.5v14c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5v-14c-3-.5-6 0-8 1.5z"/><path d="M12 6v14"/></svg>';
+const ICON_GEAR = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c.8-4 4-6 8-6s7.2 2 8 6"/></svg>';
 const ICON_CHECK = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M7.5 12.5l3 3 6-6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 // ---- Screens ----
@@ -217,6 +222,7 @@ function header(rec) {
     return `<div class="pk"><button class="picker" data-act="go" data-k="shelf" aria-label="${esc(T('backShelf'))}"><span class="avatar" lang="${esc(tl)}">${esc([...t][0] || '?')}</span>
       <span class="meta"><span class="tiny muted">${esc(T('backShelf'))}</span><b lang="${esc(tl)}">${esc(t)}</b></span></button></div>`; })() : '';
   return `<header class="top"><button class="brand" data-act="go" data-k="library" aria-label="Book Editor">${ICON_BOOK}<span class="brand-name">Book Editor</span></button>${pick}<div class="grow"></div>
+    <button class="pubset gearbtn" data-act="go" data-k="settings" aria-label="${esc(T('settings'))}"${S.route.view === 'settings' ? ' aria-current="page"' : ''}>${ICON_GEAR}</button>
     <button class="pubset langbig" data-act="lang-open" aria-haspopup="dialog" aria-label="${esc(T('dispLang'))}: ${esc(UI[S.ui].name)}">${ICON_GLOBE}<b>${esc(UI[S.ui].name)}</b><span class="car" aria-hidden="true">▾</span></button></header>`;
 }
 function langSheet() {
@@ -354,6 +360,89 @@ function shelfSheet() {
       <div class="sheetacts"><button class="btn bigbtn" data-act="sheet-close">${esc(T('cancel'))}</button><button class="btn bigbtn danger-solid" data-act="del-yes">${esc(T('del'))}</button></div></section></div>`;
   }
   return '';
+}
+
+// ---- Settings: the account, and for admins the People list (who may sign in) ----
+// The server (functions/) checks the Cloudflare Access sign-in on every call; this screen only shows what it answers.
+// Where there is no server (public demo, a local copy) api/me is missing and the screen says sign-in is not used.
+async function api(method, path, body) {
+  const r = await fetch(path, { method, cache: 'no-store', credentials: 'same-origin',
+    headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  const isJson = (r.headers.get('content-type') || '').includes('application/json');
+  const d = isJson ? await r.json().catch(() => ({})) : {};
+  if (!r.ok || !isJson) { const e = new Error(d.error || `http-${r.status}`); e.code = d.error || (isJson ? 'server' : 'none'); e.status = r.status; throw e; }
+  return d;
+}
+const errText = code => UI.en['err_' + String(code).replace(/-/g, '_')] ? T('err_' + code.replace(/-/g, '_')) : T('saveFail');
+async function loadAccount() {
+  if (S.acct && S.acct !== 'none') { if (S.acct.role === 'admin' && !S.people) loadPeople(); return; }
+  try { S.acct = await api('GET', 'api/me'); } catch { S.acct = 'none'; }
+  if (S.acct !== 'none' && S.acct.role === 'admin') return loadPeople();
+  render();
+}
+async function loadPeople() {
+  try { S.people = await api('GET', 'api/admin/people'); S.peopleErr = null; } catch (e) { S.peopleErr = e.code; }
+  render();
+}
+async function savePerson() {
+  const f = S.pForm, box = document.getElementById('pemail'), email = (box?.value ?? f.email).trim().toLowerCase();
+  f.email = email;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast(errText('bad-email')); return box?.focus(); }
+  S.pBusy = true; render();
+  try {
+    S.people = await api('POST', 'api/admin/people', { email, role: f.role, login: f.login });
+    toast(T(f.editing ? 'savedP' : 'addedP', { email }));
+    S.pForm = { email: '', role: 'reader', login: f.login, editing: false };
+  } catch (e) { toast(errText(e.code)); if (e.code === 'changed') await loadPeople(); }
+  S.pBusy = false; render();
+  if (!S.pForm.email) document.getElementById('pemail')?.focus();
+}
+async function removePerson(email) {
+  S.pBusy = true; render();
+  try { S.people = await api('DELETE', 'api/admin/people', { email }); S.pRemove = null; toast(T('removedP', { email })); }
+  catch (e) { S.pRemove = null; toast(errText(e.code)); if (e.code === 'changed') await loadPeople(); }
+  S.pBusy = false; render();
+}
+const roleChip = role => `<span class="chip">${esc(T(role === 'admin' ? 'roleAdmin' : 'roleReader'))}</span>`;
+function settingsView() {
+  const a = S.acct;
+  const head = `<div class="home-h"><h1>${esc(T('settings'))}</h1></div>`;
+  if (!a) return `<div class="home">${head}<div class="loading">${esc(T('loading'))}</div></div>`;
+  if (a === 'none') return `<div class="home">${head}<section class="card setcard"><h2>${esc(T('account'))}</h2><p class="muted">${esc(T('noAccount'))}</p></section></div>`;
+  const acct = `<section class="card setcard"><h2>${esc(T('account'))}</h2>
+    <p class="who"><span class="muted">${esc(T('signedInAs'))}</span> <b class="mail">${esc(a.email)}</b> ${roleChip(a.role)}</p>
+    <a class="btn bigbtn" href="/cdn-cgi/access/logout">${esc(T('signOut'))}</a></section>`;
+  return `<div class="home">${head}${acct}${a.role === 'admin' ? peopleCard(a) : ''}</div>`;
+}
+function peopleCard(a) {
+  const f = S.pForm, seg = (name, k, opts) => `<div class="seg" role="group" aria-label="${esc(T(name))}">${opts.map(([v, l]) =>
+    `<button type="button" data-act="pf" data-f="${k}" data-k="${v}" aria-pressed="${f[k] === v}">${esc(T(l))}</button>`).join('')}</div>`;
+  const form = `<div class="pform">
+      <label class="fl" for="pemail">${esc(T('emailL'))}</label>
+      <input id="pemail" class="nickin" type="email" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="254" value="${esc(f.email)}" ${f.editing ? 'readonly' : ''}>
+      <div class="prow"><span class="fl">${esc(T('roleL'))}</span>${seg('roleL', 'role', [['reader', 'roleReader'], ['admin', 'roleAdmin']])}</div>
+      <div class="prow"><span class="fl">${esc(T('loginL'))}</span>${seg('loginL', 'login', [['code', 'loginCode'], ['google', 'loginGoogle']])}</div>
+      ${f.login === 'google' ? `<p class="pnote">${esc(T('googleNote'))}${a.googleUsersUrl ? ` <a href="${esc(a.googleUsersUrl)}" target="_blank" rel="noopener noreferrer">${esc(T('openGoogle'))}</a>` : ''}</p>` : ''}
+      <div class="sheetacts">${f.editing ? `<button class="btn bigbtn" data-act="pf-cancel">${esc(T('cancel'))}</button>` : ''}
+        <button class="btn primary bigbtn${f.editing ? '' : ' wide'}" data-act="p-save" ${S.pBusy ? 'disabled aria-busy="true"' : ''}>${esc(T(f.editing ? 'savePerson' : 'addPerson'))}</button></div></div>`;
+  let list;
+  if (S.peopleErr) list = problem2(errText(S.peopleErr));
+  else if (!S.people) list = `<div class="loading">${esc(T('loading'))}</div>`;
+  else {
+    const fixed = S.people.fixed.map(e => `<li class="prs"><div class="pm"><b class="mail">${esc(e)}</b><span class="tags">${roleChip('admin')}<span class="muted tiny">${esc(T('ownerTag'))}${e === a.email ? ' · ' + esc(T('youTag')) : ''}</span></span></div></li>`);
+    const rows = S.people.people.slice().sort((x, y) => x.email.localeCompare(y.email)).map(p => `<li class="prs"><div class="pm"><b class="mail">${esc(p.email)}</b>
+        <span class="tags">${roleChip(p.role)}<span class="chip">${esc(T(p.login === 'google' ? 'loginGoogle' : 'loginCode'))}</span>${p.email === a.email ? `<span class="muted tiny">${esc(T('youTag'))}</span>` : ''}</span></div>
+        <div class="pa"><button class="btn" data-act="p-edit" data-k="${esc(p.email)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('editP'))}</button>${p.email === a.email ? '' : `<button class="btn danger" data-act="p-remove" data-k="${esc(p.email)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('removeP'))}</button>`}</div></li>`);
+    list = `<ul class="plist">${fixed.join('')}${rows.join('')}</ul>${rows.length ? '' : `<p class="muted">${esc(T('nobodyYet'))}</p>`}`;
+  }
+  return `<section class="card setcard"><h2>${esc(T('people'))}</h2><p class="muted">${esc(T('peopleHelp'))}</p>${form}${list}</section>`;
+}
+const problem2 = text => `<div class="msg bad" role="alert"><p>${esc(text)}</p></div>`;
+function removeSheet() {
+  if (!S.pRemove || S.route.view !== 'settings') return '';
+  return `<div class="sheetbox" data-act="p-remove-no"><section class="card" role="alertdialog" aria-modal="true" aria-labelledby="ph" aria-describedby="pp" data-stop="1">
+    <h2 id="ph" class="mail">${esc(T('removeAsk', { email: S.pRemove }))}</h2><p id="pp">${esc(T('removeHelp'))}</p>
+    <div class="sheetacts"><button class="btn bigbtn" data-act="p-remove-no">${esc(T('cancel'))}</button><button class="btn bigbtn danger-solid" data-act="p-remove-yes" ${S.pBusy ? 'disabled aria-busy="true"' : ''}>${esc(T('removeP'))}</button></div></section></div>`;
 }
 
 // The reader, for a Library copy (read) or a shelf copy (mine). Picture left, words right, one language at a time.
@@ -900,14 +989,14 @@ function render() {
   if (S.composing) { S.renderLater = true; return; }
   document.documentElement.lang = S.ui;
   const r = S.route;
-  const main = r.view === 'read' ? readerScreen() : r.view === 'book' ? bookScreen()
+  const main = r.view === 'read' ? readerScreen() : r.view === 'book' ? bookScreen() : r.view === 'settings' ? settingsView()
     : homeTabs(r.view) + (r.view === 'shelf' ? shelfView() : libraryView());
   const app = document.getElementById('app');
   // Keep the box being typed in: same element id → same focus, cursor, selection and scroll.
   const f = document.activeElement, keep = f?.id && app.contains(f)
     ? { id: f.id, s: f.selectionStart, e: f.selectionEnd, d: f.selectionDirection, top: f.scrollTop } : null;
   app.classList.toggle('selecting', S.selecting && r.view === 'shelf');
-  app.innerHTML = (r.view === 'book' ? '' : header()) + main + actBar() + shelfSheet() + sendSheet() + pdfSheet() + nameSheet() + langSheet();
+  app.innerHTML = (r.view === 'book' ? '' : header()) + main + actBar() + shelfSheet() + sendSheet() + pdfSheet() + nameSheet() + removeSheet() + langSheet();
   const el = keep && document.getElementById(keep.id);
   if (el) {
     el.focus({ preventScroll: true });
@@ -956,10 +1045,17 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]');
   if (!b || b.disabled) return;
   // A tap inside a sheet's card (not on a button) must not close the sheet.
-  if (['lang-close', 'sheet-close', 'name-close', 'send-close', 'pdf-close'].includes(b.dataset.act) && b.classList.contains('sheetbox') && e.target.closest('[data-stop]')) return;
+  if (['lang-close', 'sheet-close', 'name-close', 'send-close', 'pdf-close', 'p-remove-no'].includes(b.dataset.act) && b.classList.contains('sheetbox') && e.target.closest('[data-stop]')) return;
   const a = b.dataset.act, k = b.dataset.k;
   if (a === 'mark') return markTap(b);
   if (a === 'go') return go(k);
+  if (a === 'pf') { S.pForm.email = document.getElementById('pemail')?.value ?? S.pForm.email; S.pForm[b.dataset.f] = k; return render(); }
+  if (a === 'p-save') return savePerson();
+  if (a === 'p-edit') { const p = S.people?.people.find(x => x.email === k); if (!p) return; S.pForm = { email: p.email, role: p.role, login: p.login, editing: true }; render(); return document.getElementById('pemail')?.scrollIntoView({ block: 'center' }); }
+  if (a === 'pf-cancel') { S.pForm = { email: '', role: 'reader', login: S.pForm.login, editing: false }; return render(); }
+  if (a === 'p-remove') { S.pRemove = k; render(); return document.querySelector('[data-act="p-remove-no"].btn')?.focus(); }
+  if (a === 'p-remove-no') { S.pRemove = null; return render(); }
+  if (a === 'p-remove-yes') return removePerson(S.pRemove);
   if (a === 'read') return go(`read/${encodeURIComponent(k)}/0`);
   if (a === 'open-mine') return go(bookHash(k));
   if (a === 'rnav') return go(`${S.route.view}/${encodeURIComponent(S.route.id)}/${k}`, true);
@@ -1163,6 +1259,8 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && S.sendAsk && S.route.view === 'book') { S.sendAsk = null; render(); return document.querySelector('[data-act="ask-send"]')?.focus(); }
   if (e.key === 'Escape' && S.sheet) return closeSheet();
   if (e.key === 'Enter' && e.target.id === 'nf') { e.preventDefault(); return createFolder(); }
+  if (e.key === 'Enter' && e.target.id === 'pemail') { e.preventDefault(); return savePerson(); }
+  if (e.key === 'Escape' && S.pRemove) { S.pRemove = null; return render(); }
   if (e.key === 'Enter' && e.target.id === 'nm') { e.preventDefault(); return saveName(); }
   if (e.key === 'Escape' && S.nameSheet) { S.nameSheet = false; S.idDraft = null; return render(); }
   if (S.route.view !== 'read' || S.langSheet || e.target.matches('input,textarea,select')) return;
@@ -1181,6 +1279,7 @@ document.addEventListener('input', e => {
   if (el.id === 'rnote' && S.mine?.rec && !S.mine.rec.sent) { S.mine.rec.note = el.value; queueSave(); return liveCounts(S.mine.rec); }
   if (el.id === 'ced' && S.editC) { S.editC.draft = el.value; return; }
   if (el.id === 'nm' && S.idDraft) { S.idDraft.nick = el.value; return; }
+  if (el.id === 'pemail') { S.pForm.email = el.value; return; }
   if (el.id === 'draft' && S.pop) { S.pop.draft = el.value; return; }
 });
 document.addEventListener('change', e => {

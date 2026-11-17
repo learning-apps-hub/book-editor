@@ -500,6 +500,73 @@ const LAYOUT_TRANSLATIONS = {
 };
 for (const code of Object.keys(UI)) Object.assign(UI[code], LAYOUT_EN, LAYOUT_TRANSLATIONS[code] || {});
 
+// Settings: the signed-in account, and for admins the People list (who may sign in).
+const SETTINGS_EN = {
+  settings: 'Settings', account: 'Your account', signedInAs: 'Signed in as', signOut: 'Sign out',
+  roleAdmin: 'Admin', roleReader: 'Reader', roleL: 'Role', loginL: 'Signs in with', loginGoogle: 'Google', loginCode: 'Email code',
+  noAccount: 'Sign-in is not used on this copy of Book Editor.',
+  people: 'People', peopleHelp: 'Only the people on this list can open Book Editor. Adding or removing someone changes sign-in straight away.',
+  emailL: 'Email address', addPerson: 'Add', savePerson: 'Save', editP: 'Change', removeP: 'Remove', youTag: 'you', ownerTag: 'owner, set on the server',
+  googleNote: 'Google sign-in: also add this address in Google Cloud under Test users, or Google will refuse it. Email code needs nothing more.',
+  openGoogle: 'Open Google Cloud test users', removeAsk: 'Remove {email}?', removeHelp: 'They are signed out and can no longer open Book Editor.',
+  addedP: 'Added {email}', savedP: 'Saved {email}', removedP: 'Removed {email}', nobodyYet: 'Nobody else yet.',
+  err_bad_email: 'That does not look like an email address.', err_sync_failed: 'Cloudflare refused the change, so nothing was changed. Please try again later.',
+  err_sync_not_configured: 'The connection to Cloudflare is not set up yet, so nothing was changed.', err_changed: 'Someone else changed the list just now. It is reloaded; please try again.',
+  err_fixed_admin: 'The owner is set on the server and cannot be changed here.', err_too_many: 'The list is full (200 people).',
+};
+const SETTINGS_TRANSLATIONS = {
+  zh: { settings: '设置', account: '你的账户', signedInAs: '已登录：', signOut: '退出登录', roleAdmin: '管理员', roleReader: '读者', roleL: '角色', loginL: '登录方式', loginGoogle: 'Google', loginCode: '邮箱验证码',
+    noAccount: '这个 Book Editor 副本不使用登录。', people: '成员', peopleHelp: '只有名单上的人能打开 Book Editor。添加或移除某人会立即改变登录权限。',
+    emailL: '邮箱地址', addPerson: '添加', savePerson: '保存', editP: '修改', removeP: '移除', youTag: '你', ownerTag: '所有者，在服务器上设定',
+    googleNote: '用 Google 登录：还要在 Google Cloud 的“测试用户”里加上这个地址，否则 Google 会拒绝。邮箱验证码不需要其他设置。', openGoogle: '打开 Google Cloud 测试用户',
+    removeAsk: '移除 {email}？', removeHelp: '对方会被退出登录，并且不能再打开 Book Editor。', addedP: '已添加 {email}', savedP: '已保存 {email}', removedP: '已移除 {email}', nobodyYet: '还没有其他人。',
+    err_bad_email: '这看起来不像邮箱地址。', err_sync_failed: 'Cloudflare 拒绝了这次修改，所以什么都没改。请稍后再试。', err_sync_not_configured: '还没有连接 Cloudflare，所以什么都没改。',
+    err_changed: '刚才有人改了名单。已重新载入，请再试一次。', err_fixed_admin: '所有者在服务器上设定，这里不能修改。', err_too_many: '名单已满（200 人）。' },
+  pl: { settings: 'Ustawienia', account: 'Twoje konto', signedInAs: 'Zalogowano jako', signOut: 'Wyloguj', roleAdmin: 'Administrator', roleReader: 'Czytelnik', roleL: 'Rola', loginL: 'Logowanie przez', loginGoogle: 'Google', loginCode: 'Kod e-mail',
+    noAccount: 'Ta kopia Book Editor nie używa logowania.', people: 'Osoby', peopleHelp: 'Tylko osoby z tej listy mogą otworzyć Book Editor. Dodanie lub usunięcie kogoś od razu zmienia logowanie.',
+    emailL: 'Adres e-mail', addPerson: 'Dodaj', savePerson: 'Zapisz', editP: 'Zmień', removeP: 'Usuń', youTag: 'ty', ownerTag: 'właściciel, ustawiony na serwerze',
+    googleNote: 'Logowanie przez Google: dodaj też ten adres w Google Cloud w Test users, inaczej Google go odrzuci. Kod e-mail nie wymaga nic więcej.', openGoogle: 'Otwórz Test users w Google Cloud',
+    removeAsk: 'Usunąć {email}?', removeHelp: 'Ta osoba zostanie wylogowana i nie otworzy już Book Editor.', addedP: 'Dodano {email}', savedP: 'Zapisano {email}', removedP: 'Usunięto {email}', nobodyYet: 'Nikogo więcej.',
+    err_bad_email: 'To nie wygląda na adres e-mail.', err_sync_failed: 'Cloudflare odrzucił zmianę, nic nie zmieniono. Spróbuj później.', err_sync_not_configured: 'Połączenie z Cloudflare nie jest jeszcze ustawione, nic nie zmieniono.',
+    err_changed: 'Ktoś właśnie zmienił listę. Wczytano ją ponownie; spróbuj jeszcze raz.', err_fixed_admin: 'Właściciel jest ustawiony na serwerze i nie można go tu zmienić.', err_too_many: 'Lista jest pełna (200 osób).' },
+  fr: { settings: 'Réglages', account: 'Votre compte', signedInAs: 'Connecté en tant que', signOut: 'Se déconnecter', roleAdmin: 'Admin', roleReader: 'Lecteur', roleL: 'Rôle', loginL: 'Connexion avec', loginGoogle: 'Google', loginCode: 'Code par e-mail',
+    noAccount: 'Cette copie de Book Editor n’utilise pas de connexion.', people: 'Personnes', peopleHelp: 'Seules les personnes de cette liste peuvent ouvrir Book Editor. Ajouter ou retirer quelqu’un change la connexion immédiatement.',
+    emailL: 'Adresse e-mail', addPerson: 'Ajouter', savePerson: 'Enregistrer', editP: 'Modifier', removeP: 'Retirer', youTag: 'vous', ownerTag: 'propriétaire, défini sur le serveur',
+    googleNote: 'Connexion Google : ajoutez aussi cette adresse dans Google Cloud, sous Test users, sinon Google la refusera. Le code par e-mail ne demande rien de plus.', openGoogle: 'Ouvrir les Test users de Google Cloud',
+    removeAsk: 'Retirer {email} ?', removeHelp: 'La personne est déconnectée et ne peut plus ouvrir Book Editor.', addedP: '{email} ajouté', savedP: '{email} enregistré', removedP: '{email} retiré', nobodyYet: 'Personne d’autre pour l’instant.',
+    err_bad_email: 'Cela ne ressemble pas à une adresse e-mail.', err_sync_failed: 'Cloudflare a refusé la modification ; rien n’a changé. Réessayez plus tard.', err_sync_not_configured: 'La connexion à Cloudflare n’est pas encore configurée ; rien n’a changé.',
+    err_changed: 'Quelqu’un vient de modifier la liste. Elle est rechargée ; réessayez.', err_fixed_admin: 'Le propriétaire est défini sur le serveur et ne peut pas être modifié ici.', err_too_many: 'La liste est pleine (200 personnes).' },
+  de: { settings: 'Einstellungen', account: 'Dein Konto', signedInAs: 'Angemeldet als', signOut: 'Abmelden', roleAdmin: 'Admin', roleReader: 'Leser', roleL: 'Rolle', loginL: 'Anmeldung mit', loginGoogle: 'Google', loginCode: 'E-Mail-Code',
+    noAccount: 'Diese Kopie von Book Editor nutzt keine Anmeldung.', people: 'Personen', peopleHelp: 'Nur Personen auf dieser Liste können Book Editor öffnen. Hinzufügen oder Entfernen ändert die Anmeldung sofort.',
+    emailL: 'E-Mail-Adresse', addPerson: 'Hinzufügen', savePerson: 'Speichern', editP: 'Ändern', removeP: 'Entfernen', youTag: 'du', ownerTag: 'Inhaberin, auf dem Server festgelegt',
+    googleNote: 'Google-Anmeldung: Diese Adresse auch in Google Cloud unter Test users eintragen, sonst lehnt Google sie ab. Der E-Mail-Code braucht nichts weiter.', openGoogle: 'Test users in Google Cloud öffnen',
+    removeAsk: '{email} entfernen?', removeHelp: 'Die Person wird abgemeldet und kann Book Editor nicht mehr öffnen.', addedP: '{email} hinzugefügt', savedP: '{email} gespeichert', removedP: '{email} entfernt', nobodyYet: 'Noch niemand sonst.',
+    err_bad_email: 'Das sieht nicht wie eine E-Mail-Adresse aus.', err_sync_failed: 'Cloudflare hat die Änderung abgelehnt, nichts wurde geändert. Bitte später erneut versuchen.', err_sync_not_configured: 'Die Verbindung zu Cloudflare ist noch nicht eingerichtet, nichts wurde geändert.',
+    err_changed: 'Jemand hat die Liste gerade geändert. Sie wurde neu geladen; bitte noch einmal versuchen.', err_fixed_admin: 'Die Inhaberin ist auf dem Server festgelegt und kann hier nicht geändert werden.', err_too_many: 'Die Liste ist voll (200 Personen).' },
+  es: { settings: 'Ajustes', account: 'Tu cuenta', signedInAs: 'Sesión iniciada como', signOut: 'Cerrar sesión', roleAdmin: 'Admin', roleReader: 'Lector', roleL: 'Rol', loginL: 'Entra con', loginGoogle: 'Google', loginCode: 'Código por correo',
+    noAccount: 'Esta copia de Book Editor no usa inicio de sesión.', people: 'Personas', peopleHelp: 'Solo las personas de esta lista pueden abrir Book Editor. Añadir o quitar a alguien cambia el acceso al instante.',
+    emailL: 'Correo electrónico', addPerson: 'Añadir', savePerson: 'Guardar', editP: 'Cambiar', removeP: 'Quitar', youTag: 'tú', ownerTag: 'propietaria, fijada en el servidor',
+    googleNote: 'Acceso con Google: añade también esta dirección en Google Cloud, en Test users, o Google la rechazará. El código por correo no necesita nada más.', openGoogle: 'Abrir Test users de Google Cloud',
+    removeAsk: '¿Quitar a {email}?', removeHelp: 'Se cierra su sesión y ya no puede abrir Book Editor.', addedP: '{email} añadido', savedP: '{email} guardado', removedP: '{email} quitado', nobodyYet: 'Nadie más todavía.',
+    err_bad_email: 'Eso no parece un correo electrónico.', err_sync_failed: 'Cloudflare rechazó el cambio, así que no cambió nada. Inténtalo más tarde.', err_sync_not_configured: 'La conexión con Cloudflare aún no está configurada, así que no cambió nada.',
+    err_changed: 'Alguien acaba de cambiar la lista. Se ha recargado; inténtalo de nuevo.', err_fixed_admin: 'La propietaria está fijada en el servidor y no se puede cambiar aquí.', err_too_many: 'La lista está llena (200 personas).' },
+  ja: { settings: '設定', account: 'あなたのアカウント', signedInAs: 'ログイン中：', signOut: 'ログアウト', roleAdmin: '管理者', roleReader: '読者', roleL: '役割', loginL: 'ログイン方法', loginGoogle: 'Google', loginCode: 'メールのコード',
+    noAccount: 'この Book Editor ではログインを使いません。', people: 'メンバー', peopleHelp: 'このリストの人だけが Book Editor を開けます。追加や削除はすぐにログインに反映されます。',
+    emailL: 'メールアドレス', addPerson: '追加', savePerson: '保存', editP: '変更', removeP: '削除', youTag: 'あなた', ownerTag: 'オーナー（サーバーで設定）',
+    googleNote: 'Google でログインする人は、Google Cloud の「テストユーザー」にもこのアドレスを追加してください。追加しないと Google に拒否されます。メールのコードは追加の設定はいりません。', openGoogle: 'Google Cloud のテストユーザーを開く',
+    removeAsk: '{email} を削除しますか？', removeHelp: 'ログアウトされ、Book Editor を開けなくなります。', addedP: '{email} を追加しました', savedP: '{email} を保存しました', removedP: '{email} を削除しました', nobodyYet: 'まだほかの人はいません。',
+    err_bad_email: 'メールアドレスではないようです。', err_sync_failed: 'Cloudflare が変更を拒否したため、何も変わっていません。あとでもう一度試してください。', err_sync_not_configured: 'Cloudflare との接続がまだ設定されていないため、何も変わっていません。',
+    err_changed: 'ほかの人がリストを変更しました。読み込み直したので、もう一度試してください。', err_fixed_admin: 'オーナーはサーバーで設定されているため、ここでは変更できません。', err_too_many: 'リストがいっぱいです（200 人）。' },
+  ko: { settings: '설정', account: '내 계정', signedInAs: '로그인:', signOut: '로그아웃', roleAdmin: '관리자', roleReader: '독자', roleL: '역할', loginL: '로그인 방법', loginGoogle: 'Google', loginCode: '이메일 코드',
+    noAccount: '이 Book Editor에서는 로그인을 쓰지 않아요.', people: '사람들', peopleHelp: '이 목록에 있는 사람만 Book Editor를 열 수 있어요. 추가하거나 빼면 바로 로그인에 반영돼요.',
+    emailL: '이메일 주소', addPerson: '추가', savePerson: '저장', editP: '바꾸기', removeP: '빼기', youTag: '나', ownerTag: '소유자, 서버에서 설정',
+    googleNote: 'Google로 로그인하는 사람은 Google Cloud의 Test users에도 이 주소를 추가하세요. 그렇지 않으면 Google이 거절해요. 이메일 코드는 다른 설정이 필요 없어요.', openGoogle: 'Google Cloud Test users 열기',
+    removeAsk: '{email}을(를) 뺄까요?', removeHelp: '로그아웃되고 더 이상 Book Editor를 열 수 없어요.', addedP: '{email} 추가됨', savedP: '{email} 저장됨', removedP: '{email} 빠짐', nobodyYet: '아직 다른 사람이 없어요.',
+    err_bad_email: '이메일 주소가 아닌 것 같아요.', err_sync_failed: 'Cloudflare가 변경을 거절해서 아무것도 바뀌지 않았어요. 나중에 다시 해 보세요.', err_sync_not_configured: 'Cloudflare 연결이 아직 설정되지 않아서 아무것도 바뀌지 않았어요.',
+    err_changed: '방금 다른 사람이 목록을 바꿨어요. 다시 불러왔으니 한 번 더 해 보세요.', err_fixed_admin: '소유자는 서버에서 설정되어 여기서 바꿀 수 없어요.', err_too_many: '목록이 가득 찼어요 (200명).' },
+};
+for (const code of Object.keys(UI)) Object.assign(UI[code], SETTINGS_EN, SETTINGS_TRANSLATIONS[code] || {});
+
 // A language's own name for itself, for story languages (any code, not only the display languages).
 // `names` = the book's optional languageNames (typed-in languages); shown first.
 export function langName(code, names) {
