@@ -1,0 +1,26 @@
+name: Deploy to Cloudflare Pages
+
+# main -> production (book-editor-hub.pages.dev), dev -> preview (dev.book-editor-hub.pages.dev).
+# Both sit behind Cloudflare Access (sign-in required).
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-pages-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site --project-name=book-editor-hub --branch=${{ github.ref_name }} --commit-dirty=true
