@@ -199,9 +199,14 @@ mark.flash { outline-offset: 1px; }
 .pm .tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .pa { display: flex; gap: 8px; }
 .pa .btn { min-height: 44px; }
-@media (max-width: 640px) { .pa { width: 100%; } .pa .btn { flex: 1; } }
+@media (max-width: 640px) { .pa { width: 100%; flex-wrap: wrap; } .pa .btn { flex: 1 1 auto; white-space: nowrap; padding-left: 12px; padding-right: 12px; } }
 .waitcard { border-color: var(--amber-d); }
 .waitcard h2 { display: flex; align-items: center; gap: 8px; }
 .qnote { font-style: italic; overflow-wrap: anywhere; }
 .joinlink { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; padding: 12px; border: 1px dashed var(--line); border-radius: 14px; }
 .joinlink code { font-size: 15px; background: var(--soft); padding: 2px 8px; border-radius: 8px; }
+/* Sign-in: passcode state per person, the one-time sign-in link sheet */
+.chip.good { background: var(--green-l, #DCEBE6); color: var(--green-d, #24564B); }
+.chip.warn { background: var(--amber); }
+.invurl { display: block; font-size: 14px; background: var(--soft); padding: 8px 10px; border-radius: 10px; overflow-wrap: anywhere; word-break: break-all; user-select: all; }
+.hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }

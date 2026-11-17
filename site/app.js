@@ -53,7 +53,8 @@ const S = {
   layoutScene: {}, pvSize: 'large',                            // selected preview scene / Large or Small
   exporting: false,                                            // a PDF is being made
   // Settings: acct = { email, role, googleUsersUrl? } | 'none' (no sign-in on this copy) | null (asking)
-  acct: null, people: null, peopleErr: null, pForm: { email: '', name: '', role: 'reader', login: 'code', editing: false }, pBusy: false, pRemove: null,
+  acct: null, people: null, peopleErr: null, pForm: { email: '', name: '', role: 'reader', editing: false }, pBusy: false, pRemove: null,
+  invite: null, passOpen: false,
 };
 S.me = Id.load(store);
 const OLD_NAME = store.get('be.name') || '';                   // a name typed before identities (2026-11-11)
@@ -363,13 +364,15 @@ function shelfSheet() {
 }
 
 // ---- Settings: the account, and for admins the People list (who may sign in) ----
-// The server (functions/) checks the Cloudflare Access sign-in on every call; this screen only shows what it answers.
+// The server (functions/) checks Book Editor's own sign-in (passcode, or Google / email code via /sso) on every call;
+// this screen only shows what it answers.
 // Where there is no server (public demo, a local copy) api/me is missing and the screen says sign-in is not used.
 async function api(method, path, body) {
   const r = await fetch(path, { method, cache: 'no-store', credentials: 'same-origin',
     headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
   const isJson = (r.headers.get('content-type') || '').includes('application/json');
   const d = isJson ? await r.json().catch(() => ({})) : {};
+  if (r.status === 401 && d.error === 'signed-out') { location.href = '/signin/?next=' + encodeURIComponent(location.pathname) + location.hash; throw Object.assign(new Error('signed-out'), { code: 'signed-out' }); }
   if (!r.ok || !isJson) { const e = new Error(d.error || `http-${r.status}`); e.code = d.error || (isJson ? 'server' : 'none'); e.status = r.status; throw e; }
   return d;
 }
@@ -393,9 +396,10 @@ async function savePerson() {
   if (name.length < 2) { toast(errText('name-needed')); return document.getElementById('pname')?.focus(); }
   S.pBusy = true; render();
   try {
-    S.people = await api('POST', 'api/admin/people', { email, name, role: f.role, login: f.login });
+    S.people = await api('POST', 'api/admin/people', { email, name, role: f.role });
     toast(T(f.editing ? 'savedP' : 'addedP', { email }));
-    S.pForm = { email: '', name: '', role: 'reader', login: f.login, editing: false };
+    S.pForm = { email: '', name: '', role: 'reader', editing: false };
+    if (S.people.invite) S.invite = S.people.invite;
   } catch (e) { toast(errText(e.code)); if (e.code === 'changed') await loadPeople(); }
   S.pBusy = false; render();
   if (!S.pForm.email) document.getElementById('pemail')?.focus();
@@ -403,7 +407,7 @@ async function savePerson() {
 async function approveRequest(email) {
   const q = S.people?.requests?.find(x => x.email === email); if (!q) return;
   S.pBusy = true; render();
-  try { S.people = await api('POST', 'api/admin/people', { email, name: q.name, role: 'reader', login: 'code' }); toast(T('approvedP', { name: q.name })); }
+  try { S.people = await api('POST', 'api/admin/people', { email, name: q.name, role: 'reader' }); toast(T('approvedP', { name: q.name })); if (S.people.invite) S.invite = S.people.invite; }
   catch (e) { toast(errText(e.code)); if (e.code === 'changed') await loadPeople(); }
   S.pBusy = false; render();
 }
@@ -414,9 +418,30 @@ async function declineRequest(email) {
   catch (e) { toast(errText(e.code)); await loadPeople(); }
   S.pBusy = false; render();
 }
-async function copyJoinLink() {
-  const url = location.origin + '/join/';
+async function copyText(url) {
   try { await navigator.clipboard.writeText(url); toast(T('copied')); } catch { toast(url); }
+}
+const copyJoinLink = () => copyText(location.origin + '/join/');
+const inviteUrl = inv => location.origin + '/signin/#i=' + inv.token;
+async function makeInvite(email) {
+  S.pBusy = true; render();
+  try { const d = await api('POST', 'api/admin/invite', { email }); S.invite = d.invite; await loadPeople(); }
+  catch (e) { toast(errText(e.code)); }
+  S.pBusy = false; render();
+}
+async function shareInvite() {
+  const inv = S.invite; if (!inv) return;
+  try { await navigator.share({ title: 'Book Editor', text: T('inviteShareText', { name: inv.name || inv.email }), url: inviteUrl(inv) }); }
+  catch (e) { if (e?.name !== 'AbortError') copyText(inviteUrl(inv)); }
+}
+async function savePasscode() {
+  const a = document.getElementById('mp')?.value || '', b = document.getElementById('mp2')?.value || '';
+  if ([...a].length < 6) { toast(errText('passcode-short')); return document.getElementById('mp')?.focus(); }
+  if (a !== b) { toast(T('passDiffer')); return document.getElementById('mp2')?.focus(); }
+  S.pBusy = true; render();
+  try { await api('POST', 'api/passcode', { passcode: a }); S.acct.hasPasscode = true; S.passOpen = false; toast(T('passSaved')); }
+  catch (e) { toast(errText(e.code)); }
+  S.pBusy = false; render();
 }
 async function removePerson(email) {
   S.pBusy = true; render();
@@ -430,9 +455,17 @@ function settingsView() {
   const head = `<div class="home-h"><h1>${esc(T('settings'))}</h1></div>`;
   if (!a) return `<div class="home">${head}<div class="loading">${esc(T('loading'))}</div></div>`;
   if (a === 'none') return `<div class="home">${head}<section class="card setcard"><h2>${esc(T('account'))}</h2><p class="muted">${esc(T('noAccount'))}</p></section></div>`;
+  const passForm = S.passOpen ? `<form class="pform" id="f-pass" novalidate>
+      <input class="hp" name="username" autocomplete="username" value="${esc(a.email)}" readonly tabindex="-1" aria-hidden="true">
+      <label class="fl" for="mp">${esc(T('newPassL'))}</label><input id="mp" class="nickin" type="password" autocomplete="new-password" minlength="6" maxlength="128">
+      <label class="fl" for="mp2">${esc(T('againL'))}</label><input id="mp2" class="nickin" type="password" autocomplete="new-password" minlength="6" maxlength="128">
+      <div class="sheetacts"><button type="button" class="btn bigbtn" data-act="pass-cancel">${esc(T('cancel'))}</button>
+        <button type="submit" class="btn primary bigbtn" ${S.pBusy ? 'disabled aria-busy="true"' : ''}>${esc(T('savePass'))}</button></div></form>`
+    : `<button class="btn bigbtn" data-act="pass-open">${esc(T(a.hasPasscode ? 'changePass' : 'setPass'))}</button>`;
   const acct = `<section class="card setcard"><h2>${esc(T('account'))}</h2>
     <p class="who"><span class="muted">${esc(T('signedInAs'))}</span> <b class="mail">${esc(a.email)}</b> ${roleChip(a.role)}</p>
-    <a class="btn bigbtn" href="/cdn-cgi/access/logout">${esc(T('signOut'))}</a></section>`;
+    <p class="muted">${esc(T(a.hasPasscode ? 'passSet' : 'passNone'))}</p>${passForm}
+    <a class="btn bigbtn" href="/signout">${esc(T('signOut'))}</a></section>`;
   return `<div class="home">${head}${acct}${a.role === 'admin' ? peopleCard(a) : ''}</div>`;
 }
 function peopleCard(a) {
@@ -444,8 +477,7 @@ function peopleCard(a) {
       <label class="fl" for="pemail">${esc(T('emailL'))}</label>
       <input id="pemail" class="nickin" type="email" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="254" value="${esc(f.email)}" ${f.editing ? 'readonly' : ''}>
       <div class="prow"><span class="fl">${esc(T('roleL'))}</span>${seg('roleL', 'role', [['reader', 'roleReader'], ['admin', 'roleAdmin']])}</div>
-      <div class="prow"><span class="fl">${esc(T('loginL'))}</span>${seg('loginL', 'login', [['code', 'loginCode'], ['google', 'loginGoogle']])}</div>
-      ${f.login === 'google' ? `<p class="pnote">${esc(T('googleNote'))}${a.googleUsersUrl ? ` <a href="${esc(a.googleUsersUrl)}" target="_blank" rel="noopener noreferrer">${esc(T('openGoogle'))}</a>` : ''}</p>` : ''}
+      ${f.editing ? '' : `<p class="pnote">${esc(T('addNote'))}</p>`}
       <div class="sheetacts">${f.editing ? `<button class="btn bigbtn" data-act="pf-cancel">${esc(T('cancel'))}</button>` : ''}
         <button class="btn primary bigbtn${f.editing ? '' : ' wide'}" data-act="p-save" ${S.pBusy ? 'disabled aria-busy="true"' : ''}>${esc(T(f.editing ? 'savePerson' : 'addPerson'))}</button></div></div>`;
   let list;
@@ -454,8 +486,8 @@ function peopleCard(a) {
   else {
     const fixed = S.people.fixed.map(e => `<li class="prs"><div class="pm"><b class="mail">${esc(e)}</b><span class="tags">${roleChip('admin')}<span class="muted tiny">${esc(T('ownerTag'))}${e === a.email ? ' · ' + esc(T('youTag')) : ''}</span></span></div></li>`);
     const rows = S.people.people.slice().sort((x, y) => (x.name || x.email).localeCompare(y.name || y.email)).map(p => `<li class="prs"><div class="pm">${p.name ? `<b>${esc(p.name)}</b><span class="mail muted">${esc(p.email)}</span>` : `<b class="mail">${esc(p.email)}</b>`}
-        <span class="tags">${roleChip(p.role)}<span class="chip">${esc(T(p.login === 'google' ? 'loginGoogle' : 'loginCode'))}</span>${p.email === a.email ? `<span class="muted tiny">${esc(T('youTag'))}</span>` : ''}</span></div>
-        <div class="pa"><button class="btn" data-act="p-edit" data-k="${esc(p.email)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('editP'))}</button>${p.email === a.email ? '' : `<button class="btn danger" data-act="p-remove" data-k="${esc(p.email)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('removeP'))}</button>`}</div></li>`);
+        <span class="tags">${roleChip(p.role)}${passChip(p)}${p.email === a.email ? `<span class="muted tiny">${esc(T('youTag'))}</span>` : ''}</span></div>
+        <div class="pa"><button class="btn" data-act="p-edit" data-k="${esc(p.email)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('editP'))}</button><button class="btn" data-act="p-invite" data-k="${esc(p.email)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('inviteP'))}</button>${p.email === a.email ? '' : `<button class="btn danger" data-act="p-remove" data-k="${esc(p.email)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('removeP'))}</button>`}</div></li>`);
     list = `<ul class="plist">${fixed.join('')}${rows.join('')}</ul>${rows.length ? '' : `<p class="muted">${esc(T('nobodyYet'))}</p>`}`;
   }
   const reqs = S.people?.requests || [];
@@ -464,7 +496,21 @@ function peopleCard(a) {
       ${q.note ? `<span class="qnote">“${esc(q.note)}”</span>` : ''}<span class="muted tiny">${esc(new Date(q.changedAt || q.at).toLocaleString(S.ui))}</span></div>
       <div class="pa"><button class="btn primary" data-act="q-yes" data-k="${esc(q.email)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('approveP'))}</button><button class="btn danger" data-act="q-no" data-k="${esc(q.email)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('declineP'))}</button></div></li>`).join('')}</ul></section>` : '';
   const share = `<div class="joinlink"><b>${esc(T('joinLinkL'))}</b><p class="muted">${esc(T('joinLinkHelp'))}</p><code class="mail">${esc(location.origin + '/join/')}</code><button class="btn" data-act="join-copy">${esc(T('copyLink'))}</button></div>`;
-  return `${waiting}<section class="card setcard"><h2>${esc(T('people'))}</h2><p class="muted">${esc(T('peopleHelp'))}</p>${share}${form}${list}</section>`;
+  const sso = `<p class="pnote">${esc(T('ssoNote'))}${a.googleUsersUrl ? ` <a href="${esc(a.googleUsersUrl)}" target="_blank" rel="noopener noreferrer">${esc(T('openGoogle'))}</a>` : ''}</p>`;
+  return `${waiting}<section class="card setcard"><h2>${esc(T('people'))}</h2><p class="muted">${esc(T('peopleHelp'))}</p>${share}${form}${list}${sso}</section>`;
+}
+const passChip = p => p.pass ? `<span class="chip good">${esc(T('chipPass'))}</span>`
+  : p.inviteUntil && Date.parse(p.inviteUntil) > Date.now() ? `<span class="chip warn">${esc(T('chipInvite'))}</span>` : `<span class="chip">${esc(T('chipNoPass'))}</span>`;
+function inviteSheet() {
+  const inv = S.invite;
+  if (!inv || S.route.view !== 'settings') return '';
+  const who = inv.name || inv.email, url = inviteUrl(inv);
+  return `<div class="sheetbox" data-act="inv-done"><section class="card" role="dialog" aria-modal="true" aria-labelledby="ih" data-stop="1">
+    <h2 id="ih">${esc(T('inviteT', { name: who }))}</h2><p>${esc(T('inviteHelp', { name: who }))}</p>
+    <code class="mail invurl">${esc(url)}</code>
+    <p class="muted tiny">${esc(T('inviteUntil', { date: new Date(inv.exp).toLocaleDateString(S.ui) }))}</p>
+    <div class="sheetacts">${navigator.share ? `<button class="btn bigbtn" data-act="inv-share">${esc(T('shareL'))}</button>` : ''}<button class="btn bigbtn" data-act="inv-copy">${esc(T('copyLink'))}</button>
+      <button class="btn primary bigbtn" data-act="inv-done">${esc(T('doneL'))}</button></div></section></div>`;
 }
 const problem2 = text => `<div class="msg bad" role="alert"><p>${esc(text)}</p></div>`;
 function removeSheet() {
@@ -1025,7 +1071,7 @@ function render() {
   const f = document.activeElement, keep = f?.id && app.contains(f)
     ? { id: f.id, s: f.selectionStart, e: f.selectionEnd, d: f.selectionDirection, top: f.scrollTop } : null;
   app.classList.toggle('selecting', S.selecting && r.view === 'shelf');
-  app.innerHTML = (r.view === 'book' ? '' : header()) + main + actBar() + shelfSheet() + sendSheet() + pdfSheet() + nameSheet() + removeSheet() + langSheet();
+  app.innerHTML = (r.view === 'book' ? '' : header()) + main + actBar() + shelfSheet() + sendSheet() + pdfSheet() + nameSheet() + removeSheet() + inviteSheet() + langSheet();
   const el = keep && document.getElementById(keep.id);
   if (el) {
     el.focus({ preventScroll: true });
@@ -1083,8 +1129,14 @@ document.addEventListener('click', e => {
   if (a === 'q-yes') return approveRequest(k);
   if (a === 'q-no') return declineRequest(k);
   if (a === 'join-copy') return copyJoinLink();
-  if (a === 'p-edit') { const p = S.people?.people.find(x => x.email === k); if (!p) return; S.pForm = { email: p.email, name: p.name || '', role: p.role, login: p.login, editing: true }; render(); return document.getElementById('pemail')?.scrollIntoView({ block: 'center' }); }
-  if (a === 'pf-cancel') { S.pForm = { email: '', name: '', role: 'reader', login: S.pForm.login, editing: false }; return render(); }
+  if (a === 'p-invite') return makeInvite(k);
+  if (a === 'inv-copy') return S.invite && copyText(inviteUrl(S.invite));
+  if (a === 'inv-share') return shareInvite();
+  if (a === 'inv-done') { S.invite = null; return render(); }
+  if (a === 'pass-open') { S.passOpen = true; render(); return document.getElementById('mp')?.focus(); }
+  if (a === 'pass-cancel') { S.passOpen = false; return render(); }
+  if (a === 'p-edit') { const p = S.people?.people.find(x => x.email === k); if (!p) return; S.pForm = { email: p.email, name: p.name || '', role: p.role, editing: true }; render(); return document.getElementById('pemail')?.scrollIntoView({ block: 'center' }); }
+  if (a === 'pf-cancel') { S.pForm = { email: '', name: '', role: 'reader', editing: false }; return render(); }
   if (a === 'p-remove') { S.pRemove = k; render(); return document.querySelector('[data-act="p-remove-no"].btn')?.focus(); }
   if (a === 'p-remove-no') { S.pRemove = null; return render(); }
   if (a === 'p-remove-yes') return removePerson(S.pRemove);
@@ -1284,6 +1336,7 @@ function focusDraft() {
 document.addEventListener('mouseup', e => { if (e.target.closest?.('#pane [data-para]')) setTimeout(() => onSelect(true), 0); });
 let selTimer;
 document.addEventListener('selectionchange', () => { clearTimeout(selTimer); selTimer = setTimeout(() => onSelect(false), 450); });
+document.addEventListener('submit', e => { if (e.target.id === 'f-pass') { e.preventDefault(); if (!S.pBusy) savePasscode(); } });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && S.pdfReady) { S.pdfReady = null; return render(); }
   if (e.key === 'Escape' && S.langSheet) { S.langSheet = false; render(); return; }
@@ -1293,6 +1346,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target.id === 'nf') { e.preventDefault(); return createFolder(); }
   if (e.key === 'Enter' && (e.target.id === 'pemail' || e.target.id === 'pname')) { e.preventDefault(); return savePerson(); }
   if (e.key === 'Escape' && S.pRemove) { S.pRemove = null; return render(); }
+  if (e.key === 'Escape' && S.invite) { S.invite = null; return render(); }
   if (e.key === 'Enter' && e.target.id === 'nm') { e.preventDefault(); return saveName(); }
   if (e.key === 'Escape' && S.nameSheet) { S.nameSheet = false; S.idDraft = null; return render(); }
   if (S.route.view !== 'read' || S.langSheet || e.target.matches('input,textarea,select')) return;

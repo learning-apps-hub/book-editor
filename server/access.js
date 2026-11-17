@@ -1,16 +1,17 @@
-// Book Editor server side (Cloudflare Pages Functions): who is signed in, who may use the app, and keeping
-// Cloudflare Access in step with the People list the admin keeps in the app.
+// Book Editor server side (Cloudflare Pages Functions): who may use the app (the People list), and keeping
+// Cloudflare Access in step with it. Access guards only /sso (the Google / email-code way in); everything else is
+// guarded by Book Editor's own passcode sign-in (server/session.js, functions/_middleware.js).
 //
 // Nothing personal lives in this public repo. Everything comes from the Pages project's settings:
 //   ACCESS_TEAM_DOMAIN  plain   e.g. <team>.cloudflareaccess.com
-//   ACCESS_AUD          plain   the Access application's audience tag
-//   ACCESS_POLICY_ID    plain   the reusable Access policy that lists the readers
+//   ACCESS_AUD          plain   the Access application's audience tag (the app covers /sso only)
+//   ACCESS_POLICY_ID    plain   the reusable Access policy that lists the people (who may use Google / email code)
 //   CF_ACCOUNT_ID       plain   the Cloudflare account
 //   ADMIN_EMAILS        secret  comma-separated; always admins, cannot be removed in the app
 //   CF_ACCESS_TOKEN     secret  API token: Access Apps and Policies Edit + Access Organizations Edit, nothing else
 //   GOOGLE_USERS_URL    plain   optional: the Google Cloud "Test users" page, shown to admins
-//   JOIN_AUD            plain   audience tag of the second Access app that guards /join (any verified email may enter)
 //   NTFY_URL            secret  optional: ntfy topic URL; a push (no names, no emails) when someone asks to join
+//   SESSION_SECRET, PASS_PEPPER  secrets for the passcode sign-in (see server/session.js)
 // R2 binding LIBRARY: People list at system/people.json, join requests at system/requests.json (the bucket is private).
 
 const PEOPLE_KEY = 'system/people.json', REQUESTS_KEY = 'system/requests.json';
@@ -18,7 +19,6 @@ export const NAME_MAX = 80, NOTE_MAX = 300, MAX_REQUESTS = 20;
 export const cleanText = (x, max) => String(x ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().replace(/\s+/g, ' ').slice(0, max);
 const CF_API = 'https://api.cloudflare.com/client/v4';
 export const ROLES = ['reader', 'admin'];
-export const LOGINS = ['google', 'code'];
 
 export class HttpError extends Error {
   constructor(status, code) { super(code); this.status = status; this.code = code; }
@@ -94,7 +94,10 @@ async function readList(env, key, field) {
 }
 export const readPeople = env => readList(env, PEOPLE_KEY, 'people');
 export const readRequests = env => readList(env, REQUESTS_KEY, 'requests');
-export const writePeople = (env, people, etag) => writeList(env, PEOPLE_KEY, { format: 'book-editor-people', version: 1, people }, etag);
+export async function writePeople(env, people, etag) {
+  await writeList(env, PEOPLE_KEY, { format: 'book-editor-people', version: 1, people }, etag);
+  peopleCache = { at: Date.now(), people };
+}
 export const writeRequests = (env, requests, etag) => writeList(env, REQUESTS_KEY, { format: 'book-editor-requests', version: 1, requests }, etag);
 async function writeList(env, key, data, etag) {
   const body = JSON.stringify(data, null, 1);
@@ -105,21 +108,24 @@ async function writeList(env, key, data, etag) {
   if (res === null) throw new HttpError(409, 'changed');
 }
 
-/** { email, role } for someone allowed to use the app, else throws 403. */
-export async function whoIs(email, env) {
-  if (adminEmails(env).includes(email)) return { email, role: 'admin', fixed: true };
+// whoIs runs on every page load, so it keeps the list for a few seconds; other copies of the server catch up within that.
+let peopleCache = null;
+async function peopleNow(env) {
+  if (peopleCache && Date.now() - peopleCache.at < 30e3) return peopleCache.people;
   const { people } = await readPeople(env);
-  const p = people.find(x => x.email === email);
-  if (!p) throw new HttpError(403, 'not-listed');
-  return { email, role: p.role === 'admin' ? 'admin' : 'reader', fixed: false };
+  peopleCache = { at: Date.now(), people };
+  return people;
 }
 
-export async function requireUser(request, env, fetcher) { return whoIs(await verifyAccess(request, env, fetcher), env); }
-export async function requireAdmin(request, env, fetcher) {
-  const me = await requireUser(request, env, fetcher);
-  if (me.role !== 'admin') throw new HttpError(403, 'not-admin');
-  return me;
+/** { email, role, name? } for someone allowed to use the app, else throws 403. */
+export async function whoIs(email, env) {
+  if (adminEmails(env).includes(email)) return { email, role: 'admin', fixed: true };
+  const people = await peopleNow(env);
+  const p = people.find(x => x.email === email);
+  if (!p) throw new HttpError(403, 'not-listed');
+  return { email, role: p.role === 'admin' ? 'admin' : 'reader', fixed: false, name: p.name || '' };
 }
+export const forgetPeopleCache = () => { peopleCache = null; };
 
 /** Writes must come from this site's own pages (no cross-site form or script). */
 export function sameOrigin(request) {
@@ -127,7 +133,7 @@ export function sameOrigin(request) {
   if (!origin || origin !== new URL(request.url).origin || (site && site !== 'same-origin')) throw new HttpError(403, 'cross-site');
 }
 
-// ---- Cloudflare Access: the readers policy = admins + everyone on the People list ----
+// ---- Cloudflare Access (/sso only): its policy = admins + everyone on the People list ----
 async function cf(env, fetcher, method, path, body) {
   if (!env.CF_ACCESS_TOKEN || !env.CF_ACCOUNT_ID) throw new HttpError(503, 'sync-not-configured');
   const r = await fetcher(`${CF_API}/accounts/${env.CF_ACCOUNT_ID}${path}`, {

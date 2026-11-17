@@ -1,7 +1,7 @@
 name: Deploy to Cloudflare Pages
 
 # main -> production (book-editor-hub.pages.dev), dev -> preview (dev.book-editor-hub.pages.dev).
-# Both sit behind Cloudflare Access (sign-in required).
+# Both require sign-in: Book Editor's own passcode (functions/_middleware.js), or Google / email code via Cloudflare Access on /sso.
 on:
   push:
     branches: [main, dev]

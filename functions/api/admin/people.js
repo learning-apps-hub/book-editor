@@ -1,15 +1,17 @@
-// /api/admin/people — the admin's People list (who may sign in), kept in R2 and pushed to Cloudflare Access.
+// /api/admin/people — the admin's People list (who may sign in), kept in R2 and pushed to Cloudflare Access (/sso).
 //   GET                      → { people: [...], requests: [...waiting to join], fixed: [admin emails set on the server] }
-//   POST   { email, name, role, login }  add or change one person (approving a join request = adding that email)
-//   DELETE { email }               remove one person and end their sessions
+//   POST   { email, name, role }   add or change one person (approving a join request = adding that email);
+//                                  a NEW person also gets `invite` back: their one-time link to choose a passcode
+//   DELETE { email }               remove one person and end their sessions everywhere
 // Admins only; writes only from this site's own pages.
 import {
-  requireAdmin, sameOrigin, readPeople, writePeople, readRequests, writeRequests, cleanText, NAME_MAX, syncPolicy, revokeUser, adminEmails, cleanEmail,
-  ROLES, LOGINS, HttpError, json, errorResponse,
+  sameOrigin, readPeople, writePeople, readRequests, writeRequests, cleanText, NAME_MAX, syncPolicy, revokeUser, adminEmails, cleanEmail,
+  ROLES, HttpError, json, errorResponse,
 } from '../../../server/access.js';
+import { requireAdmin, newInvite, deleteCreds } from '../../../server/session.js';
 
 const MAX_PEOPLE = 200;
-const view = async (env, people) => ({ people, requests: (await readRequests(env)).requests, fixed: adminEmails(env) });
+const view = async (env, people) => ({ people, requests: (await readRequests(env)).requests.map(({ from, ...q }) => q), fixed: adminEmails(env) });
 
 async function body(request) {
   if (!(request.headers.get('content-type') || '').startsWith('application/json')) throw new HttpError(415, 'json-only');
@@ -33,7 +35,7 @@ export async function onRequestPost({ request, env }) {
     const b = await body(request);
     const email = cleanEmail(b.email);
     if (!email) throw new HttpError(400, 'bad-email');
-    const role = ROLES.includes(b.role) ? b.role : 'reader', login = LOGINS.includes(b.login) ? b.login : 'code';
+    const role = ROLES.includes(b.role) ? b.role : 'reader';
     const name = cleanText(b.name, NAME_MAX);
     if (name.length < 2) throw new HttpError(400, 'name-needed');
     if (adminEmails(env).includes(email)) throw new HttpError(400, 'fixed-admin');
@@ -41,15 +43,18 @@ export async function onRequestPost({ request, env }) {
     const old = people.find(p => p.email === email);
     if (!old && people.length >= MAX_PEOPLE) throw new HttpError(400, 'too-many');
     const next = old
-      ? people.map(p => p.email === email ? { ...p, name, role, login, changedAt: new Date().toISOString() } : p)
-      : [...people, { email, name, role, login, addedAt: new Date().toISOString(), addedBy: me.email }];
+      ? people.map(p => p.email === email ? { ...p, name, role, changedAt: new Date().toISOString() } : p)
+      : [...people, { email, name, role, addedAt: new Date().toISOString(), addedBy: me.email }];
     await syncPolicy(env, next);                 // Access first: the list is only saved once sign-in matches it
     await writePeople(env, next, etag);
     const rq = await readRequests(env);          // approved: no longer waiting
     if (rq.requests.some(x => x.email === email)) {
       try { await writeRequests(env, rq.requests.filter(x => x.email !== email), rq.etag); } catch { /* shown again; approving twice is harmless */ }
     }
-    return json(await view(env, next));
+    if (old) return json(await view(env, next));
+    const { token, exp } = await newInvite(env, email);
+    const { people: now } = await readPeople(env);
+    return json({ ...(await view(env, now)), invite: { email, name, token, exp } });
   } catch (e) { return errorResponse(e); }
 }
 
@@ -65,7 +70,8 @@ export async function onRequestDelete({ request, env }) {
     if (next.length === people.length) throw new HttpError(404, 'not-found');
     await syncPolicy(env, next);
     await writePeople(env, next, etag);
-    try { await revokeUser(env, email); } catch { /* already out of the policy; their session just runs out */ }
+    await deleteCreds(env, email);               // every Book Editor cookie of theirs stops working
+    try { await revokeUser(env, email); } catch { /* already out of the policy; an Access session alone cannot open the app */ }
     return json(await view(env, next));
   } catch (e) { return errorResponse(e); }
 }

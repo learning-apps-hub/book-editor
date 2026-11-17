@@ -1,4 +1,4 @@
-/* Ask to join: stand-alone page (the app's stylesheets sit behind sign-in). eBooks' colours and shapes, system fonts. */
+/* Sign-in and Ask to join: stand-alone pages (the app's stylesheets sit behind sign-in). eBooks' colours and shapes, system fonts. */
 :root { --bg: #F6F1E7; --card: #FFFDF8; --ink: #2A2723; --muted: #6B645A; --line: #E2D9C8; --green: #2F6B5E; --green-d: #24564B; --green-l: #DCEBE6;
   --amber: #FCE7B2; --amber-d: #E2B65A; --red: #B42318; --red-l: #FDE7E4; }
 * { box-sizing: border-box; }
@@ -28,3 +28,12 @@ input[readonly] { background: var(--bg); }
 .langs button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; min-height: 40px; padding: 4px 12px; font: inherit; font-size: 15px; cursor: pointer; }
 .langs button[aria-pressed="true"] { background: var(--green); color: #fff; border-color: var(--green); }
 :focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }
+.stack { display: flex; flex-direction: column; gap: 14px; }
+.lrow { display: flex; justify-content: space-between; align-items: end; gap: 8px; margin-bottom: 4px; }
+.lrow label { margin: 0; }
+.btn.small { width: auto; min-height: 36px; padding: 2px 12px; font-size: 15px; border-radius: 10px; }
+.tiny { font-size: 15px; }
+a { color: var(--green-d); font-weight: 800; }
+.or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 15px; }
+.or::before, .or::after { content: ''; flex: 1; border-top: 1px solid var(--line); }
+.hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }

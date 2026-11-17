@@ -1,5 +1,6 @@
 // /api/admin/requests — decline a join request: DELETE { email }. (Approve = add the person on /api/admin/people.)
-import { requireAdmin, sameOrigin, readRequests, writeRequests, readPeople, adminEmails, cleanEmail, HttpError, json, errorResponse } from '../../../server/access.js';
+import { sameOrigin, readRequests, writeRequests, readPeople, adminEmails, cleanEmail, HttpError, json, errorResponse } from '../../../server/access.js';
+import { requireAdmin } from '../../../server/session.js';
 
 export async function onRequestDelete({ request, env }) {
   try {
@@ -13,6 +14,6 @@ export async function onRequestDelete({ request, env }) {
     if (next.length === requests.length) throw new HttpError(404, 'not-found');
     await writeRequests(env, next, etag);
     const { people } = await readPeople(env);
-    return json({ people, requests: next, fixed: adminEmails(env) });
+    return json({ people, requests: next.map(({ from, ...q }) => q), fixed: adminEmails(env) });
   } catch (e) { return errorResponse(e); }
 }
