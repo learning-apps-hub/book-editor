@@ -9,6 +9,7 @@ import {
   ROLES, HttpError, json, errorResponse,
 } from '../../../server/access.js';
 import { requireAdmin, newInvite, deleteCreds } from '../../../server/session.js';
+import { readIndex, writeIndex } from '../../../server/library.js';
 
 const MAX_PEOPLE = 200;
 const view = async (env, people) => ({ people, requests: (await readRequests(env)).requests.map(({ from, ...q }) => q), fixed: adminEmails(env) });
@@ -71,6 +72,10 @@ export async function onRequestDelete({ request, env }) {
     await syncPolicy(env, next);
     await writePeople(env, next, etag);
     await deleteCreds(env, email);               // every Book Editor cookie of theirs stops working
+    try {                                        // and no Library book stays open to them if they are ever added again
+      const { books, etag } = await readIndex(env);
+      if (books.some(b => b.access?.[email])) await writeIndex(env, books.map(b => { const { [email]: _, ...access } = b.access || {}; return { ...b, access }; }), etag);
+    } catch { /* not on the list = no access anyway */ }
     try { await revokeUser(env, email); } catch { /* already out of the policy; an Access session alone cannot open the app */ }
     return json(await view(env, next));
   } catch (e) { return errorResponse(e); }

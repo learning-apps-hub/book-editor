@@ -210,3 +210,15 @@ mark.flash { outline-offset: 1px; }
 .chip.warn { background: var(--amber); }
 .invurl { display: block; font-size: 14px; background: var(--soft); padding: 8px 10px; border-radius: 10px; overflow-wrap: anywhere; word-break: break-all; user-select: all; }
 .hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+/* Library books (admin): add a .book.zip, thumbnails, who can see each book; read-only Library books */
+.fileadd { position: relative; display: flex; align-items: center; justify-content: center; text-align: center; cursor: pointer; }
+.fileadd input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.fileadd.busy { opacity: .7; cursor: progress; }
+.fileadd:focus-within { outline: 3px solid var(--green); outline-offset: 2px; }
+.bkrow { flex-wrap: nowrap; align-items: flex-start; }
+@media (max-width: 640px) { .bkrow { flex-wrap: wrap; } }
+.bkthumb { flex: 0 0 48px; width: 48px; height: 64px; object-fit: cover; border-radius: 6px; background: var(--soft); border: 1px solid var(--line); }
+.accsheet { max-height: 85vh; overflow-y: auto; }
+.accsheet .prs .seg { flex-wrap: nowrap; }
+.accsheet .prs .seg button { min-height: 44px; font-size: 15px; padding: 4px 12px; }
+.rochip { align-self: flex-start; font-weight: 700; }
