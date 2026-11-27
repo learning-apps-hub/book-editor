@@ -52,6 +52,12 @@ const S = {
   editC: null,                                                 // { k: comment id, draft } comment being edited
   layoutScene: {}, pvSize: 'large',                            // selected preview scene / Large or Small
   exporting: false,                                            // a PDF is being made
+  // Settings: acct = { email, role, googleUsersUrl? } | 'none' (no sign-in on this copy) | null (asking)
+  acct: null, people: null, peopleErr: null, pForm: { email: '', name: '', role: 'reader', editing: false }, pBusy: false, pRemove: null,
+  invite: null, passOpen: false,
+  // Admin: Library books (with who may see them), what readers sent back, an upload in progress, the open sheets
+  aBooks: null, aBooksErr: null, upload: null, accessFor: null, bkRemove: null, inbox: null, inboxErr: null,
+  sending: false,
 };
 S.me = Id.load(store);
 const OLD_NAME = store.get('be.name') || '';                   // a name typed before identities (2026-11-11)
@@ -121,6 +127,11 @@ async function loadShelf() {
   render();
 }
 const onShelf = id => !!S.shelf?.some(b => b.id === id);
+// A real Library book opened to this person for reading only: no "Add to My shelf". (The sample and older Libraries say nothing: edit.)
+const libEntry = id => S.lib?.books.find(b => b.id === id);
+const readOnlyBook = id => libEntry(id)?.can === 'read';
+// Send back goes straight to the author's inbox for a real Library book this person may edit; otherwise a file is saved.
+const viaInbox = id => !S.sample && S.libBase === 'library/' && libEntry(id)?.can === 'edit';
 
 async function addBook(id) {
   if (S.shelfError) return toast(T('noStore'));
@@ -174,6 +185,7 @@ async function loadMine(id) {
 function parseRoute() {
   const [view, id, at, n] = decodeURIComponent(location.hash.slice(1)).split('/');
   if (view === 'shelf') return { view: 'shelf' };
+  if (view === 'settings') return { view: 'settings' };
   if (view === 'book' && id) return at === 'layout' ? { view, id, tab: 'layout' } : { view, id, tab: 'story', n: Math.max(1, parseInt(n, 10) || 1) };
   if (view === 'mine' && id) return { view: 'book', id, tab: 'story', n: Math.max(1, parseInt(at, 10) || 1) };
   if (view === 'read' && id) return { view, id, at: Math.max(0, parseInt(at, 10) || 0) };
@@ -195,6 +207,7 @@ function onRoute() {
   if (r.view !== 'book') S.nameSheet = false;
   if (r.view === 'read' && S.lib) loadBook(r.id);
   if (r.view === 'book') loadMine(r.id); else closeMine();
+  if (r.view === 'settings') loadAccount();
   render();
   if (prev.view !== r.view || prev.id !== r.id || prev.n !== r.n || prev.tab !== r.tab) window.scrollTo(0, 0);
 }
@@ -207,6 +220,7 @@ const ICON_SHELF = '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" 
 const ICON_LIB = '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M2 9l10-5 10 5z"/><path d="M5 9v9M9.7 9v9M14.3 9v9M19 9v9"/><path d="M2 21h20"/></svg>';
 const ICON_PEN = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>';
 const ICON_READ = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M12 6c-2-1.5-5-2-8-1.5v14c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5v-14c-3-.5-6 0-8 1.5z"/><path d="M12 6v14"/></svg>';
+const ICON_GEAR = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c.8-4 4-6 8-6s7.2 2 8 6"/></svg>';
 const ICON_CHECK = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M7.5 12.5l3 3 6-6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 // ---- Screens ----
@@ -217,6 +231,7 @@ function header(rec) {
     return `<div class="pk"><button class="picker" data-act="go" data-k="shelf" aria-label="${esc(T('backShelf'))}"><span class="avatar" lang="${esc(tl)}">${esc([...t][0] || '?')}</span>
       <span class="meta"><span class="tiny muted">${esc(T('backShelf'))}</span><b lang="${esc(tl)}">${esc(t)}</b></span></button></div>`; })() : '';
   return `<header class="top"><button class="brand" data-act="go" data-k="library" aria-label="Book Editor">${ICON_BOOK}<span class="brand-name">Book Editor</span></button>${pick}<div class="grow"></div>
+    <button class="pubset gearbtn" data-act="go" data-k="settings" aria-label="${esc(T('settings'))}"${S.route.view === 'settings' ? ' aria-current="page"' : ''}>${ICON_GEAR}</button>
     <button class="pubset langbig" data-act="lang-open" aria-haspopup="dialog" aria-label="${esc(T('dispLang'))}: ${esc(UI[S.ui].name)}">${ICON_GLOBE}<b>${esc(UI[S.ui].name)}</b><span class="car" aria-hidden="true">▾</span></button></header>`;
 }
 function langSheet() {
@@ -237,6 +252,7 @@ const sampleNote = () => S.sample ? `<p class="muted" style="margin:0">${esc(T('
 const addingLabel = () => S.adding.m ? T('addingN', { n: S.adding.n, m: S.adding.m }) : T('adding');
 
 function addButton(id, big) {
+  if (readOnlyBook(id) && !onShelf(id)) return `<span class="chip rochip">${esc(T('readOnlyChip'))}</span>`;
   if (S.adding?.id === id) return `<button class="btn primary ${big ? 'bigbtn' : 'addbig'}" disabled aria-busy="true">${esc(addingLabel())}</button>`;
   if (onShelf(id)) return `<button class="btn onbtn ${big ? 'bigbtn' : ''}" data-act="open-mine" data-k="${esc(id)}">${esc(T('onShelfOpen'))}</button>`;
   return big ? `<button class="btn primary bigbtn" data-act="add" data-k="${esc(id)}" ${S.adding ? 'disabled' : ''}>${ICON_PEN}${esc(T('addShelf'))}</button>`
@@ -356,6 +372,287 @@ function shelfSheet() {
   return '';
 }
 
+// ---- Settings: the account, and for admins the People list (who may sign in) ----
+// The server (functions/) checks Book Editor's own sign-in (passcode, or Google / email code via /sso) on every call;
+// this screen only shows what it answers.
+// Where there is no server (public demo, a local copy) api/me is missing and the screen says sign-in is not used.
+async function api(method, path, body) {
+  const r = await fetch(path, { method, cache: 'no-store', credentials: 'same-origin',
+    headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  const isJson = (r.headers.get('content-type') || '').includes('application/json');
+  const d = isJson ? await r.json().catch(() => ({})) : {};
+  if (r.status === 401 && d.error === 'signed-out') { location.href = '/signin/?next=' + encodeURIComponent(location.pathname) + location.hash; throw Object.assign(new Error('signed-out'), { code: 'signed-out' }); }
+  if (!r.ok || !isJson) { const e = new Error(d.error || `http-${r.status}`); e.code = d.error || (isJson ? 'server' : 'none'); e.status = r.status; throw e; }
+  return d;
+}
+const errText = code => UI.en['err_' + String(code).replace(/-/g, '_')] ? T('err_' + code.replace(/-/g, '_')) : T('saveFail');
+async function loadAccount() {
+  if (S.acct && S.acct !== 'none') { if (S.acct.role === 'admin') { if (!S.people) loadPeople(); loadAdminBooks(); loadInbox(); } return; }
+  try { S.acct = await api('GET', 'api/me'); } catch { S.acct = 'none'; }
+  if (S.acct !== 'none' && S.acct.role === 'admin') { loadAdminBooks(); loadInbox(); return loadPeople(); }
+  render();
+}
+async function loadPeople() {
+  try { S.people = await api('GET', 'api/admin/people'); S.peopleErr = null; } catch (e) { S.peopleErr = e.code; }
+  render();
+}
+const keepForm = () => { const e = document.getElementById('pemail'), n = document.getElementById('pname'); if (e) S.pForm.email = e.value; if (n) S.pForm.name = n.value; };
+async function savePerson() {
+  keepForm();
+  const f = S.pForm, email = f.email.trim().toLowerCase(), name = f.name.trim();
+  f.email = email;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast(errText('bad-email')); return document.getElementById('pemail')?.focus(); }
+  if (name.length < 2) { toast(errText('name-needed')); return document.getElementById('pname')?.focus(); }
+  S.pBusy = true; render();
+  try {
+    S.people = await api('POST', 'api/admin/people', { email, name, role: f.role });
+    toast(T(f.editing ? 'savedP' : 'addedP', { email }));
+    S.pForm = { email: '', name: '', role: 'reader', editing: false };
+    if (S.people.invite) S.invite = S.people.invite;
+  } catch (e) { toast(errText(e.code)); if (e.code === 'changed') await loadPeople(); }
+  S.pBusy = false; render();
+  if (!S.pForm.email) document.getElementById('pemail')?.focus();
+}
+async function approveRequest(email) {
+  const q = S.people?.requests?.find(x => x.email === email); if (!q) return;
+  S.pBusy = true; render();
+  try { S.people = await api('POST', 'api/admin/people', { email, name: q.name, role: 'reader' }); toast(T('approvedP', { name: q.name })); if (S.people.invite) S.invite = S.people.invite; }
+  catch (e) { toast(errText(e.code)); if (e.code === 'changed') await loadPeople(); }
+  S.pBusy = false; render();
+}
+async function declineRequest(email) {
+  const q = S.people?.requests?.find(x => x.email === email); if (!q) return;
+  S.pBusy = true; render();
+  try { S.people = await api('DELETE', 'api/admin/requests', { email }); toast(T('declinedP', { name: q.name })); }
+  catch (e) { toast(errText(e.code)); await loadPeople(); }
+  S.pBusy = false; render();
+}
+async function copyText(url) {
+  try { await navigator.clipboard.writeText(url); toast(T('copied')); } catch { toast(url); }
+}
+const copyJoinLink = () => copyText(location.origin + '/join/');
+const inviteUrl = inv => location.origin + '/signin/#i=' + inv.token;
+async function makeInvite(email) {
+  S.pBusy = true; render();
+  try { const d = await api('POST', 'api/admin/invite', { email }); S.invite = d.invite; await loadPeople(); }
+  catch (e) { toast(errText(e.code)); }
+  S.pBusy = false; render();
+}
+async function shareInvite() {
+  const inv = S.invite; if (!inv) return;
+  try { await navigator.share({ title: 'Book Editor', text: T('inviteShareText', { name: inv.name || inv.email }), url: inviteUrl(inv) }); }
+  catch (e) { if (e?.name !== 'AbortError') copyText(inviteUrl(inv)); }
+}
+async function savePasscode() {
+  const a = document.getElementById('mp')?.value || '', b = document.getElementById('mp2')?.value || '';
+  if ([...a].length < 6) { toast(errText('passcode-short')); return document.getElementById('mp')?.focus(); }
+  if (a !== b) { toast(T('passDiffer')); return document.getElementById('mp2')?.focus(); }
+  S.pBusy = true; render();
+  try { await api('POST', 'api/passcode', { passcode: a }); S.acct.hasPasscode = true; S.passOpen = false; toast(T('passSaved')); }
+  catch (e) { toast(errText(e.code)); }
+  S.pBusy = false; render();
+}
+async function removePerson(email) {
+  S.pBusy = true; render();
+  try { S.people = await api('DELETE', 'api/admin/people', { email }); S.pRemove = null; toast(T('removedP', { email })); }
+  catch (e) { S.pRemove = null; toast(errText(e.code)); if (e.code === 'changed') await loadPeople(); }
+  S.pBusy = false; render();
+}
+const roleChip = role => `<span class="chip">${esc(T(role === 'admin' ? 'roleAdmin' : 'roleReader'))}</span>`;
+function settingsView() {
+  const a = S.acct;
+  const head = `<div class="home-h"><h1>${esc(T('settings'))}</h1></div>`;
+  if (!a) return `<div class="home">${head}<div class="loading">${esc(T('loading'))}</div></div>`;
+  if (a === 'none') return `<div class="home">${head}<section class="card setcard"><h2>${esc(T('account'))}</h2><p class="muted">${esc(T('noAccount'))}</p></section></div>`;
+  const passForm = S.passOpen ? `<form class="pform" id="f-pass" novalidate>
+      <input class="hp" name="username" autocomplete="username" value="${esc(a.email)}" readonly tabindex="-1" aria-hidden="true">
+      <label class="fl" for="mp">${esc(T('newPassL'))}</label><input id="mp" class="nickin" type="password" autocomplete="new-password" minlength="6" maxlength="128">
+      <label class="fl" for="mp2">${esc(T('againL'))}</label><input id="mp2" class="nickin" type="password" autocomplete="new-password" minlength="6" maxlength="128">
+      <div class="sheetacts"><button type="button" class="btn bigbtn" data-act="pass-cancel">${esc(T('cancel'))}</button>
+        <button type="submit" class="btn primary bigbtn" ${S.pBusy ? 'disabled aria-busy="true"' : ''}>${esc(T('savePass'))}</button></div></form>`
+    : `<button class="btn bigbtn" data-act="pass-open">${esc(T(a.hasPasscode ? 'changePass' : 'setPass'))}</button>`;
+  const acct = `<section class="card setcard"><h2>${esc(T('account'))}</h2>
+    <p class="who"><span class="muted">${esc(T('signedInAs'))}</span> <b class="mail">${esc(a.email)}</b> ${roleChip(a.role)}</p>
+    <p class="muted">${esc(T(a.hasPasscode ? 'passSet' : 'passNone'))}</p>${passForm}
+    <a class="btn bigbtn" href="/signout">${esc(T('signOut'))}</a></section>`;
+  return `<div class="home">${head}${acct}${a.role === 'admin' ? inboxCard() + booksCard() + peopleCard(a) : ''}</div>`;
+}
+function peopleCard(a) {
+  const f = S.pForm, seg = (name, k, opts) => `<div class="seg" role="group" aria-label="${esc(T(name))}">${opts.map(([v, l]) =>
+    `<button type="button" data-act="pf" data-f="${k}" data-k="${v}" aria-pressed="${f[k] === v}">${esc(T(l))}</button>`).join('')}</div>`;
+  const form = `<div class="pform">
+      <label class="fl" for="pname">${esc(T('nameL'))}</label>
+      <input id="pname" class="nickin" autocomplete="off" maxlength="80" value="${esc(f.name)}">
+      <label class="fl" for="pemail">${esc(T('emailL'))}</label>
+      <input id="pemail" class="nickin" type="email" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="254" value="${esc(f.email)}" ${f.editing ? 'readonly' : ''}>
+      <div class="prow"><span class="fl">${esc(T('roleL'))}</span>${seg('roleL', 'role', [['reader', 'roleReader'], ['admin', 'roleAdmin']])}</div>
+      ${f.editing ? '' : `<p class="pnote">${esc(T('addNote'))}</p>`}
+      <div class="sheetacts">${f.editing ? `<button class="btn bigbtn" data-act="pf-cancel">${esc(T('cancel'))}</button>` : ''}
+        <button class="btn primary bigbtn${f.editing ? '' : ' wide'}" data-act="p-save" ${S.pBusy ? 'disabled aria-busy="true"' : ''}>${esc(T(f.editing ? 'savePerson' : 'addPerson'))}</button></div></div>`;
+  let list;
+  if (S.peopleErr) list = problem2(errText(S.peopleErr));
+  else if (!S.people) list = `<div class="loading">${esc(T('loading'))}</div>`;
+  else {
+    const fixed = S.people.fixed.map(e => `<li class="prs"><div class="pm"><b class="mail">${esc(e)}</b><span class="tags">${roleChip('admin')}<span class="muted tiny">${esc(T('ownerTag'))}${e === a.email ? ' · ' + esc(T('youTag')) : ''}</span></span></div></li>`);
+    const rows = S.people.people.slice().sort((x, y) => (x.name || x.email).localeCompare(y.name || y.email)).map(p => `<li class="prs"><div class="pm">${p.name ? `<b>${esc(p.name)}</b><span class="mail muted">${esc(p.email)}</span>` : `<b class="mail">${esc(p.email)}</b>`}
+        <span class="tags">${roleChip(p.role)}${passChip(p)}${p.email === a.email ? `<span class="muted tiny">${esc(T('youTag'))}</span>` : ''}</span></div>
+        <div class="pa"><button class="btn" data-act="p-edit" data-k="${esc(p.email)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('editP'))}</button><button class="btn" data-act="p-invite" data-k="${esc(p.email)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('inviteP'))}</button>${p.email === a.email ? '' : `<button class="btn danger" data-act="p-remove" data-k="${esc(p.email)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('removeP'))}</button>`}</div></li>`);
+    list = `<ul class="plist">${fixed.join('')}${rows.join('')}</ul>${rows.length ? '' : `<p class="muted">${esc(T('nobodyYet'))}</p>`}`;
+  }
+  const reqs = S.people?.requests || [];
+  const waiting = reqs.length ? `<section class="card setcard waitcard"><h2>${esc(T('waitingL'))} <span class="chip">${reqs.length}</span></h2><p class="muted">${esc(T('waitingHelp'))}</p>
+    <ul class="plist">${reqs.map(q => `<li class="prs"><div class="pm"><b>${esc(q.name)}</b><span class="mail muted">${esc(q.email)}</span>
+      ${q.note ? `<span class="qnote">“${esc(q.note)}”</span>` : ''}<span class="muted tiny">${esc(new Date(q.changedAt || q.at).toLocaleString(S.ui))}</span></div>
+      <div class="pa"><button class="btn primary" data-act="q-yes" data-k="${esc(q.email)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('approveP'))}</button><button class="btn danger" data-act="q-no" data-k="${esc(q.email)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('declineP'))}</button></div></li>`).join('')}</ul></section>` : '';
+  const share = `<div class="joinlink"><b>${esc(T('joinLinkL'))}</b><p class="muted">${esc(T('joinLinkHelp'))}</p><code class="mail">${esc(location.origin + '/join/')}</code><button class="btn" data-act="join-copy">${esc(T('copyLink'))}</button></div>`;
+  const sso = `<p class="pnote">${esc(T('ssoNote'))}${a.googleUsersUrl ? ` <a href="${esc(a.googleUsersUrl)}" target="_blank" rel="noopener noreferrer">${esc(T('openGoogle'))}</a>` : ''}</p>`;
+  return `${waiting}<section class="card setcard"><h2>${esc(T('people'))}</h2><p class="muted">${esc(T('peopleHelp'))}</p>${share}${form}${list}${sso}</section>`;
+}
+// ---- Admin: Library books (add a .book.zip, who may see each one, remove) and what readers sent back ----
+async function loadAdminBooks() {
+  try { S.aBooks = (await api('GET', 'api/admin/books')).books; S.aBooksErr = null; } catch (e) { S.aBooksErr = e.code; }
+  render();
+}
+async function loadInbox() {
+  try { S.inbox = (await api('GET', 'api/admin/inbox')).items; S.inboxErr = null; } catch (e) { S.inboxErr = e.code; }
+  render();
+}
+const fail = code => Object.assign(new Error(code), { code });
+const zipPictures = book => [...new Set(Object.values(book.pictures || {}).flatMap(g => Object.values(g || {})).filter(p => typeof p === 'string' && p))];
+async function putFile(id, v, path, bytes) {
+  const q = new URLSearchParams({ id, v, path });
+  const r = await fetch('api/admin/books?' + q, { method: 'PUT', credentials: 'same-origin', cache: 'no-store', body: bytes });
+  if (!r.ok) { const d = await r.json().catch(() => ({})); throw fail(d.error || 'upload'); }
+}
+async function uploadBook(file) {
+  if (!file || S.upload) return;
+  S.upload = { n: 0, m: 0 }; render();
+  try {
+    const { readZip, ZipError } = await import('./unzip.js');
+    let files;
+    try { files = await readZip(file); } catch (e) { throw fail(e instanceof ZipError ? 'zip' : 'zip'); }
+    if (!files.has('book.json') || !files.has('story.json')) throw fail('not-a-book');
+    const bookBytes = await files.get('book.json')();
+    let book; try { book = JSON.parse(new TextDecoder().decode(bookBytes)); } catch { throw fail('not-a-book'); }
+    if (book?.format !== 'book-editor-book') throw fail('not-a-book');
+    if (book.formatVersion !== 1) throw fail('too-new');
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/.test(String(book.id))) throw fail('bad-book');
+    const pics = zipPictures(book);
+    if (pics.some(p => !files.has(p))) throw fail('missing-pictures');
+    const list = ['book.json', 'story.json', ...pics], had = S.aBooks?.some(b => b.id === book.id);
+    const { v } = await api('POST', 'api/admin/books', { action: 'begin', id: book.id, bookVersion: book.bookVersion });
+    S.upload = { n: 0, m: list.length }; render();
+    const queue = list.slice();
+    const worker = async () => {
+      for (let p; (p = queue.shift()) !== undefined;) {
+        await putFile(book.id, v, p, p === 'book.json' ? bookBytes : await files.get(p)());
+        S.upload.n++; render();
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(3, list.length) }, worker));
+    S.aBooks = (await api('POST', 'api/admin/books', { action: 'commit', id: book.id, v })).books;
+    toast(T(had ? 'bkUpdated' : 'bkAdded', { title: titleOf(book.titles, book.languages, S.ui) || book.id }));
+    loadLibrary();
+  } catch (e) { toast(errText(e.code || 'upload')); }
+  S.upload = null; render();
+}
+const bookTitle = b => titleOf(b.titles, b.languages, S.ui) || b.id;
+const sizeText = n => n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`;
+function accessLine(b) {
+  const v = Object.values(b.access || {}), e = v.filter(x => x === 'edit').length, r = v.filter(x => x === 'read').length;
+  return e || r ? T('bkOpenTo', { e, r }) : T('bkOnlyAdmins');
+}
+function booksCard() {
+  const up = S.upload;
+  const add = `<label class="btn primary bigbtn wide fileadd${up ? ' busy' : ''}"${up ? ' aria-busy="true"' : ''}>${esc(up ? (up.m ? T('bkUploading', { n: up.n, m: up.m }) : T('bkReading')) : T('bkAdd'))}
+    <input type="file" id="bkfile" accept=".zip,application/zip" ${up ? 'disabled' : ''}></label>`;
+  let list;
+  if (S.aBooksErr) list = problem2(errText(S.aBooksErr));
+  else if (!S.aBooks) list = `<div class="loading">${esc(T('loading'))}</div>`;
+  else if (!S.aBooks.length) list = `<p class="muted">${esc(T('bkNone'))}</p>`;
+  else list = `<ul class="plist">${S.aBooks.slice().sort((x, y) => String(y.shared).localeCompare(String(x.shared))).map(b => `<li class="prs bkrow">
+      ${b.cover ? `<img class="bkthumb" src="${esc('library/' + b.cover)}" alt="" loading="lazy">` : '<span class="bkthumb"></span>'}
+      <div class="pm"><b>${esc(bookTitle(b))}</b><span class="muted tiny">${esc(T('versionN', { n: b.bookVersion }))} · ${esc((b.languages || []).map(l => langName(l, b.languageNames)).join(' · '))} · ${esc(sizeText(b.bytes || 0))}</span>
+        <span class="tags"><span class="chip">${esc(accessLine(b))}</span></span></div>
+      <div class="pa"><button class="btn" data-act="bk-access" data-k="${esc(b.id)}">${esc(T('bkAccess'))}</button><button class="btn danger" data-act="bk-remove" data-k="${esc(b.id)}">${esc(T('bkRemove'))}</button></div></li>`).join('')}</ul>`;
+  return `<section class="card setcard"><h2>${esc(T('booksT'))}</h2><p class="muted">${esc(T('booksHelp'))}</p>${add}${list}</section>`;
+}
+function openAccess(id) {
+  const b = S.aBooks?.find(x => x.id === id); if (!b) return;
+  S.accessFor = { id, draft: { ...(b.access || {}) }, busy: false }; render();
+  document.querySelector('.accsheet button')?.focus();
+}
+async function saveAccess() {
+  const A = S.accessFor; if (!A || A.busy) return;
+  A.busy = true; render();
+  try { S.aBooks = (await api('POST', 'api/admin/books', { action: 'access', id: A.id, access: A.draft })).books; S.accessFor = null; toast(T('accSaved')); loadLibrary(); }
+  catch (e) { A.busy = false; toast(errText(e.code)); if (e.code === 'changed') loadAdminBooks(); }
+  render();
+}
+function accessSheet() {
+  const A = S.accessFor, b = A && S.aBooks?.find(x => x.id === A.id);
+  if (!b || S.route.view !== 'settings') return '';
+  const people = (S.people?.people || []).slice().sort((x, y) => (x.name || x.email).localeCompare(y.name || y.email));
+  const rows = people.map(p => { const cur = A.draft[p.email] || 'none'; return `<li class="prs"><div class="pm"><b>${esc(p.name || p.email)}</b>${p.name ? `<span class="mail muted">${esc(p.email)}</span>` : ''}</div>
+      <div class="seg" role="group" aria-label="${esc(p.name || p.email)}">${[['none', 'accNo'], ['read', 'accRead'], ['edit', 'accEdit']].map(([v, l]) =>
+        `<button type="button" data-act="acc-set" data-e="${esc(p.email)}" data-k="${v}" aria-pressed="${cur === v}">${esc(T(l))}</button>`).join('')}</div></li>`; }).join('');
+  return `<div class="sheetbox" data-act="acc-close"><section class="card accsheet" role="dialog" aria-modal="true" aria-labelledby="ah" data-stop="1">
+    <h2 id="ah">${esc(T('accT', { title: bookTitle(b) }))}</h2><p class="muted">${esc(T('accHelp'))}</p>
+    ${!S.people ? `<div class="loading">${esc(T('loading'))}</div>` : people.length ? `<ul class="plist">${rows}</ul>` : `<p class="muted">${esc(T('accNobody'))}</p>`}
+    <div class="sheetacts"><button class="btn bigbtn" data-act="acc-close">${esc(T('cancel'))}</button><button class="btn primary bigbtn" data-act="acc-save" ${A.busy || !people.length ? 'disabled' : ''}${A.busy ? ' aria-busy="true"' : ''}>${esc(T('savePerson'))}</button></div></section></div>`;
+}
+async function removeBook(id) {
+  const b = S.aBooks?.find(x => x.id === id); if (!b) return;
+  S.pBusy = true; render();
+  try { S.aBooks = (await api('DELETE', 'api/admin/books', { id })).books; toast(T('bkRemoved', { title: bookTitle(b) })); loadLibrary(); }
+  catch (e) { toast(errText(e.code)); }
+  S.bkRemove = null; S.pBusy = false; render();
+}
+function bookRemoveSheet() {
+  const b = S.bkRemove && S.aBooks?.find(x => x.id === S.bkRemove);
+  if (!b || S.route.view !== 'settings') return '';
+  return `<div class="sheetbox" data-act="bk-remove-no"><section class="card" role="alertdialog" aria-modal="true" aria-labelledby="bh" aria-describedby="bp" data-stop="1">
+    <h2 id="bh">${esc(T('bkRemoveQ', { title: bookTitle(b) }))}</h2><p id="bp">${esc(T('bkRemoveHelp'))}</p>
+    <div class="sheetacts"><button class="btn bigbtn" data-act="bk-remove-no">${esc(T('cancel'))}</button><button class="btn bigbtn danger-solid" data-act="bk-remove-yes" ${S.pBusy ? 'disabled aria-busy="true"' : ''}>${esc(T('bkRemove'))}</button></div></section></div>`;
+}
+async function inboxDone(key) {
+  S.pBusy = true; render();
+  try { await api('POST', 'api/admin/inbox', { key, action: 'done' }); S.inbox = S.inbox.filter(x => x.key !== key); toast(T('ibDoneT')); }
+  catch (e) { toast(errText(e.code)); loadInbox(); }
+  S.pBusy = false; render();
+}
+function inboxCard() {
+  let list;
+  if (S.inboxErr) list = problem2(errText(S.inboxErr));
+  else if (!S.inbox) list = `<div class="loading">${esc(T('loading'))}</div>`;
+  else if (!S.inbox.length) list = `<p class="muted">${esc(T('inboxEmpty'))}</p>`;
+  else list = `<ul class="plist">${S.inbox.map(x => `<li class="prs"><div class="pm"><b>${esc(x.title || x.id)}</b>
+      <span class="muted">${esc(x.name || x.from)}${x.name ? ` <span class="mail">· ${esc(x.from)}</span>` : ''}</span>
+      <span class="tags"><span class="chip ${x.kind === 'final' ? 'good' : 'warn'}">${esc(T(x.kind === 'final' ? 'ibFinal' : 'ibRewrite', { n: x.kind === 'final' ? x.round : x.round + 1 }))}</span><span class="muted tiny">${esc(new Date(x.at).toLocaleString(S.ui))}</span></span></div>
+      <div class="pa"><a class="btn" href="${esc('api/admin/inbox?key=' + encodeURIComponent(x.key))}" download>${esc(T('ibGet'))}</a><button class="btn" data-act="ib-done" data-k="${esc(x.key)}" ${S.pBusy ? 'disabled' : ''}>${esc(T('ibDone'))}</button></div></li>`).join('')}</ul>`;
+  return `<section class="card setcard"><h2>${esc(T('inboxT'))}${S.inbox?.length ? ` <span class="chip">${S.inbox.length}</span>` : ''}</h2><p class="muted">${esc(T('inboxHelp'))}</p>${list}</section>`;
+}
+const passChip = p => p.pass ? `<span class="chip good">${esc(T('chipPass'))}</span>`
+  : p.inviteUntil && Date.parse(p.inviteUntil) > Date.now() ? `<span class="chip warn">${esc(T('chipInvite'))}</span>` : `<span class="chip">${esc(T('chipNoPass'))}</span>`;
+function inviteSheet() {
+  const inv = S.invite;
+  if (!inv || S.route.view !== 'settings') return '';
+  const who = inv.name || inv.email, url = inviteUrl(inv);
+  return `<div class="sheetbox" data-act="inv-done"><section class="card" role="dialog" aria-modal="true" aria-labelledby="ih" data-stop="1">
+    <h2 id="ih">${esc(T('inviteT', { name: who }))}</h2><p>${esc(T('inviteHelp', { name: who }))}</p>
+    <code class="mail invurl">${esc(url)}</code>
+    <p class="muted tiny">${esc(T('inviteUntil', { date: new Date(inv.exp).toLocaleDateString(S.ui) }))}</p>
+    <div class="sheetacts">${navigator.share ? `<button class="btn bigbtn" data-act="inv-share">${esc(T('shareL'))}</button>` : ''}<button class="btn bigbtn" data-act="inv-copy">${esc(T('copyLink'))}</button>
+      <button class="btn primary bigbtn" data-act="inv-done">${esc(T('doneL'))}</button></div></section></div>`;
+}
+const problem2 = text => `<div class="msg bad" role="alert"><p>${esc(text)}</p></div>`;
+function removeSheet() {
+  if (!S.pRemove || S.route.view !== 'settings') return '';
+  return `<div class="sheetbox" data-act="p-remove-no"><section class="card" role="alertdialog" aria-modal="true" aria-labelledby="ph" aria-describedby="pp" data-stop="1">
+    <h2 id="ph" class="mail">${esc(T('removeAsk', { email: S.pRemove }))}</h2><p id="pp">${esc(T('removeHelp'))}</p>
+    <div class="sheetacts"><button class="btn bigbtn" data-act="p-remove-no">${esc(T('cancel'))}</button><button class="btn bigbtn danger-solid" data-act="p-remove-yes" ${S.pBusy ? 'disabled aria-busy="true"' : ''}>${esc(T('removeP'))}</button></div></section></div>`;
+}
+
 // The reader, for a Library copy (read) or a shelf copy (mine). Picture left, words right, one language at a time.
 function readerBody({ id, book, story, src, back, tag, call }) {
   const langs = book.languages, m = story.length;
@@ -395,7 +692,7 @@ function readerScreen() {
   const B = S.books[id];
   if (!B || B.loading) return `<div class="rtop">${back}</div><div class="loading">${esc(T('loading'))}</div>`;
   if (B.error) return `<div class="rtop">${back}</div>${problem(B.error, B.error === 'bookFail' ? 'retry-book' : null)}`;
-  const call = `<div class="rcall"><p>${esc(T(onShelf(id) ? 'onShelfMsg' : 'wantEdit'))}</p>${addButton(id, true)}</div>`;
+  const call = `<div class="rcall"><p>${esc(T(onShelf(id) ? 'onShelfMsg' : readOnlyBook(id) ? 'canReadOnly' : 'wantEdit'))}</p>${addButton(id, true)}</div>`;
   return readerBody({ id, book: B.book, story: B.story, src: p => B.dir + p, back, tag: T('readOnly'), call });
 }
 // ---- A shelf book: top bar, Story / Layout steps ----
@@ -581,7 +878,7 @@ function layoutView(rec) {
   const selected = S.layoutScene[rec.id] ?? 0;
   const missing = Object.fromEntries(data.missingTitles.map(x => [x.spread, x.languages]));
   const options = Layout.TARGETS.map(([k, key]) => `<option value="${k}" ${k === target ? 'selected' : ''}>${esc(T(key))}</option>`).join('');
-  const exportLabel = S.exporting ? T('making') : target === 'changes' ? T(rec.sent ? 'saveAgain' : 'sendBack') : T('exportA');
+  const exportLabel = S.exporting ? T('making') : target === 'changes' ? T(rec.sent ? (rec.sent.via === 'inbox' ? 'saveCopy' : 'saveAgain') : 'sendBack') : T('exportA');
   const card = `<section class="card xcard"><div class="xrow"><label class="xto"><span>${esc(T('exportTo'))}</span><select class="box" id="xt">${options}</select></label>
     <button class="btn primary" data-act="layout-export" ${S.exporting ? 'disabled aria-busy="true"' : ''}>${esc(exportLabel)}</button></div><div class="xnote" role="note"><span class="xi" aria-hidden="true">i</span><div>${esc(layoutNote(target))}</div></div>
     ${layoutSettingsPanel(rec, target, st)}</section>`;
@@ -785,8 +1082,8 @@ function doneBar(rec) {
   if (!rec.sent) return '';
   const fin = rec.sent.kind === 'final';
   return `<div class="done-bar"><span class="tick">${ICON_TICK}</span><div class="grow" style="flex-basis:260px"><b>${esc(T(fin ? 'approvedBar' : 'sentBar', { n: fin ? rec.sent.round : rec.sent.round + 1, t: when(rec.sent.at) }))}</b>
-    <div class="small muted">${esc(T(fin ? 'approvedSub' : 'sentSub'))}</div></div>
-    <button class="btn small" data-act="save-again">${esc(T('saveAgain'))}</button><button class="btn small" data-act="unlock">${esc(T('unlock'))}</button></div>`;
+    <div class="small muted">${esc(T(rec.sent.via === 'inbox' ? (fin ? 'approvedSubIn' : 'sentSubIn') : (fin ? 'approvedSub' : 'sentSub')))}</div></div>
+    <button class="btn small" data-act="save-again">${esc(T(rec.sent.via === 'inbox' ? 'saveCopy' : 'saveAgain'))}</button><button class="btn small" data-act="unlock">${esc(T('unlock'))}</button></div>`;
 }
 // eBooks' Next round bar (nextRound, fold): what goes, + Note for this round (the whole story),
 // Send back for round n+1 (the author rewrites) or Approve story (final: kept as lessons, nothing rewritten).
@@ -812,12 +1109,12 @@ function liveCounts(rec) {
 function sendSheet() {
   const rec = S.mine?.rec;
   if (!S.sendAsk || !rec || S.route.view !== 'book') return '';
-  const fin = S.sendAsk === 'final', file = `<b>${esc(fileName(rec))}</b>`;
+  const fin = S.sendAsk === 'final', file = `<b>${esc(fileName(rec))}</b>`, inbox = viaInbox(rec.id);
   return `<div class="sheetbox" data-act="send-close"><section class="card" role="dialog" aria-modal="true" aria-labelledby="sh" aria-describedby="sp" data-stop="1">
     <h2 id="sh">${esc(T(fin ? 'approveQ' : 'sendQ', { n: Work.round(rec) + 1 }))}</h2>
-    <p id="sp">${Th(fin ? 'approveHelp' : 'sendHelp', { n: Work.round(rec) + 1, file })}</p>
+    <p id="sp">${Th(inbox ? (fin ? 'approveHelpIn' : 'sendHelpIn') : (fin ? 'approveHelp' : 'sendHelp'), { n: Work.round(rec) + 1, file })}</p>
     ${countText(Work.counts(rec)) ? `<p class="muted">${esc(T('toSend', { what: countText(Work.counts(rec)) }))}</p>` : ''}
-    <div class="sheetacts"><button class="btn bigbtn" data-act="send-close">${esc(T('cancel'))}</button><button class="btn primary bigbtn" data-act="send-yes">${esc(T('saveFile'))}</button></div></section></div>`;
+    <div class="sheetacts"><button class="btn bigbtn" data-act="send-close">${esc(T('cancel'))}</button><button class="btn primary bigbtn" data-act="send-yes" ${S.sending ? 'disabled aria-busy="true"' : ''}>${esc(T(S.sending ? 'sending' : inbox ? 'sendNow' : 'saveFile'))}</button></div></section></div>`;
 }
 const fileName = rec => `${(titleOf(rec.book.titles, rec.book.languages) || rec.id).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').trim() || 'book'}.changes.json`;
 function download(name, obj) {
@@ -900,14 +1197,14 @@ function render() {
   if (S.composing) { S.renderLater = true; return; }
   document.documentElement.lang = S.ui;
   const r = S.route;
-  const main = r.view === 'read' ? readerScreen() : r.view === 'book' ? bookScreen()
+  const main = r.view === 'read' ? readerScreen() : r.view === 'book' ? bookScreen() : r.view === 'settings' ? settingsView()
     : homeTabs(r.view) + (r.view === 'shelf' ? shelfView() : libraryView());
   const app = document.getElementById('app');
   // Keep the box being typed in: same element id → same focus, cursor, selection and scroll.
   const f = document.activeElement, keep = f?.id && app.contains(f)
     ? { id: f.id, s: f.selectionStart, e: f.selectionEnd, d: f.selectionDirection, top: f.scrollTop } : null;
   app.classList.toggle('selecting', S.selecting && r.view === 'shelf');
-  app.innerHTML = (r.view === 'book' ? '' : header()) + main + actBar() + shelfSheet() + sendSheet() + pdfSheet() + nameSheet() + langSheet();
+  app.innerHTML = (r.view === 'book' ? '' : header()) + main + actBar() + shelfSheet() + sendSheet() + pdfSheet() + nameSheet() + removeSheet() + inviteSheet() + accessSheet() + bookRemoveSheet() + langSheet();
   const el = keep && document.getElementById(keep.id);
   if (el) {
     el.focus({ preventScroll: true });
@@ -956,10 +1253,34 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]');
   if (!b || b.disabled) return;
   // A tap inside a sheet's card (not on a button) must not close the sheet.
-  if (['lang-close', 'sheet-close', 'name-close', 'send-close', 'pdf-close'].includes(b.dataset.act) && b.classList.contains('sheetbox') && e.target.closest('[data-stop]')) return;
+  if (['lang-close', 'sheet-close', 'name-close', 'send-close', 'pdf-close', 'p-remove-no', 'acc-close', 'bk-remove-no'].includes(b.dataset.act) && b.classList.contains('sheetbox') && e.target.closest('[data-stop]')) return;
   const a = b.dataset.act, k = b.dataset.k;
   if (a === 'mark') return markTap(b);
   if (a === 'go') return go(k);
+  if (a === 'pf') { keepForm(); S.pForm[b.dataset.f] = k; return render(); }
+  if (a === 'p-save') return savePerson();
+  if (a === 'bk-access') return openAccess(k);
+  if (a === 'acc-set' && S.accessFor) { if (k === 'none') delete S.accessFor.draft[b.dataset.e]; else S.accessFor.draft[b.dataset.e] = k; return render(); }
+  if (a === 'acc-save') return saveAccess();
+  if (a === 'acc-close') { S.accessFor = null; return render(); }
+  if (a === 'bk-remove') { S.bkRemove = k; render(); return document.querySelector('[data-act="bk-remove-no"].btn')?.focus(); }
+  if (a === 'bk-remove-no') { S.bkRemove = null; return render(); }
+  if (a === 'bk-remove-yes') return removeBook(S.bkRemove);
+  if (a === 'ib-done') return inboxDone(k);
+  if (a === 'q-yes') return approveRequest(k);
+  if (a === 'q-no') return declineRequest(k);
+  if (a === 'join-copy') return copyJoinLink();
+  if (a === 'p-invite') return makeInvite(k);
+  if (a === 'inv-copy') return S.invite && copyText(inviteUrl(S.invite));
+  if (a === 'inv-share') return shareInvite();
+  if (a === 'inv-done') { S.invite = null; return render(); }
+  if (a === 'pass-open') { S.passOpen = true; render(); return document.getElementById('mp')?.focus(); }
+  if (a === 'pass-cancel') { S.passOpen = false; return render(); }
+  if (a === 'p-edit') { const p = S.people?.people.find(x => x.email === k); if (!p) return; S.pForm = { email: p.email, name: p.name || '', role: p.role, editing: true }; render(); return document.getElementById('pemail')?.scrollIntoView({ block: 'center' }); }
+  if (a === 'pf-cancel') { S.pForm = { email: '', name: '', role: 'reader', editing: false }; return render(); }
+  if (a === 'p-remove') { S.pRemove = k; render(); return document.querySelector('[data-act="p-remove-no"].btn')?.focus(); }
+  if (a === 'p-remove-no') { S.pRemove = null; return render(); }
+  if (a === 'p-remove-yes') return removePerson(S.pRemove);
   if (a === 'read') return go(`read/${encodeURIComponent(k)}/0`);
   if (a === 'open-mine') return go(bookHash(k));
   if (a === 'rnav') return go(`${S.route.view}/${encodeURIComponent(S.route.id)}/${k}`, true);
@@ -1057,10 +1378,20 @@ function storyClick(a, k) {
     const kind = a === 'save-again' ? rec.sent?.kind : S.sendAsk;
     const file = kind && Work.changesFile(rec, S.me, kind, layoutChoice(rec));
     if (!file) { S.sendAsk = null; render(); return toast(T('nothingYet')); }
+    const done = (via, msg) => {
+      if (a === 'send-yes') { rec.sent = { kind, round: Work.round(rec), at: new Date().toISOString(), ...(via ? { via } : {}) }; S.sendAsk = null; S.pop = null; S.editC = null; S.delC = null; queueSave(); flushSave(); }
+      S.sending = false; render(); toast(msg);
+      document.querySelector('[data-act="save-again"]')?.focus();
+    };
+    if (a === 'send-yes' && viaInbox(rec.id)) {
+      if (S.sending) return;
+      S.sending = true; render();
+      return api('POST', 'api/inbox', { id: rec.id, changes: file }).then(() => done('inbox', T('sentIn')), () => {
+        download(fileName(rec), file); done(null, T('sentFailFile', { file: fileName(rec) }));
+      });
+    }
     download(fileName(rec), file);
-    if (a === 'send-yes') { rec.sent = { kind, round: Work.round(rec), at: new Date().toISOString() }; S.sendAsk = null; S.pop = null; S.editC = null; S.delC = null; queueSave(); flushSave(); render(); }
-    toast(T('fileSaved', { file: fileName(rec) }));
-    return document.querySelector('[data-act="save-again"]')?.focus();
+    return done(null, T('fileSaved', { file: fileName(rec) }));
   }
   if (a === 'unlock' && locked) { delete rec.sent; queueSave(); render(); return document.querySelector('[data-act="ask-send"]')?.focus(); }
   if (locked) return;                                            // sent: nothing below may change the story
@@ -1156,6 +1487,7 @@ function focusDraft() {
 document.addEventListener('mouseup', e => { if (e.target.closest?.('#pane [data-para]')) setTimeout(() => onSelect(true), 0); });
 let selTimer;
 document.addEventListener('selectionchange', () => { clearTimeout(selTimer); selTimer = setTimeout(() => onSelect(false), 450); });
+document.addEventListener('submit', e => { if (e.target.id === 'f-pass') { e.preventDefault(); if (!S.pBusy) savePasscode(); } });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && S.pdfReady) { S.pdfReady = null; return render(); }
   if (e.key === 'Escape' && S.langSheet) { S.langSheet = false; render(); return; }
@@ -1163,6 +1495,11 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && S.sendAsk && S.route.view === 'book') { S.sendAsk = null; render(); return document.querySelector('[data-act="ask-send"]')?.focus(); }
   if (e.key === 'Escape' && S.sheet) return closeSheet();
   if (e.key === 'Enter' && e.target.id === 'nf') { e.preventDefault(); return createFolder(); }
+  if (e.key === 'Enter' && (e.target.id === 'pemail' || e.target.id === 'pname')) { e.preventDefault(); return savePerson(); }
+  if (e.key === 'Escape' && S.pRemove) { S.pRemove = null; return render(); }
+  if (e.key === 'Escape' && S.accessFor) { S.accessFor = null; return render(); }
+  if (e.key === 'Escape' && S.bkRemove) { S.bkRemove = null; return render(); }
+  if (e.key === 'Escape' && S.invite) { S.invite = null; return render(); }
   if (e.key === 'Enter' && e.target.id === 'nm') { e.preventDefault(); return saveName(); }
   if (e.key === 'Escape' && S.nameSheet) { S.nameSheet = false; S.idDraft = null; return render(); }
   if (S.route.view !== 'read' || S.langSheet || e.target.matches('input,textarea,select')) return;
@@ -1181,6 +1518,8 @@ document.addEventListener('input', e => {
   if (el.id === 'rnote' && S.mine?.rec && !S.mine.rec.sent) { S.mine.rec.note = el.value; queueSave(); return liveCounts(S.mine.rec); }
   if (el.id === 'ced' && S.editC) { S.editC.draft = el.value; return; }
   if (el.id === 'nm' && S.idDraft) { S.idDraft.nick = el.value; return; }
+  if (el.id === 'pemail') { S.pForm.email = el.value; return; }
+  if (el.id === 'pname') { S.pForm.name = el.value; return; }
   if (el.id === 'draft' && S.pop) { S.pop.draft = el.value; return; }
 });
 document.addEventListener('change', e => {
@@ -1198,6 +1537,7 @@ document.addEventListener('change', e => {
       patchLayout(rec, key === 'book' ? { picture_size: value } : { picture_sizes: { [key]: value } }); return;
     }
   }
+  if (el.id === 'bkfile') { const f = el.files?.[0]; el.value = ''; return uploadBook(f); }
   if (e.target.id === 'home-sort') { S.home.sort = e.target.value; store.set('be.home', JSON.stringify(S.home)); render(); return document.getElementById('home-sort')?.focus(); }
   if (e.target.id === 'at' && S.mine?.rec) go(bookHash(S.mine.rec.id, +e.target.value), true);
 });

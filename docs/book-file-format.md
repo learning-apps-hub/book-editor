@@ -211,6 +211,14 @@ library.json
 `bytes` is the total size of the book's folder, so the app can say how much room adding
 it to My shelf takes.
 
+On the Cloudflare site the Library is private (R2, `functions/library/`): each person gets only the books an
+admin opened to them, and each entry carries `can`: `"read"` (read in the Library only) or `"edit"` (also add to
+My shelf and send back). An entry without `can` (the sample, older Libraries) means `"edit"`.
+
+Send back / Approve story for a Library book the person may edit goes straight to the author's private inbox
+(`POST /api/inbox { id, changes }`, the changes file of §2); admins download it under Settings → Sent back to you.
+Anywhere else (the sample, the public demo, or when sending fails) the changes file is saved on the device instead.
+
 A book entry may also carry `languageNames`, copied from its `book.json`, so Library cards
 name typed-in languages too.
 
